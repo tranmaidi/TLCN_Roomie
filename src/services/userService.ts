@@ -33,7 +33,11 @@ export async function registerRequest(
     expiresAt,
   });
 
-  await sendOTPEmail(email, otp, "register");
+  // fire-and-forget: không await để request trả về nhanh nếu SMTP chậm/blocked
+  sendOTPEmail(email, otp, "register").catch((e) =>
+    console.error("[userService] sendOTPEmail error (non-blocking):", e && e.message)
+  );
+
   return { message: "Đã gửi mã OTP tới email để xác thực." };
 }
 

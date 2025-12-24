@@ -104,8 +104,8 @@ const userSchema = new Schema<IUser>(
 );
 
 // Index để tối ưu truy vấn
-userSchema.index({ email: 1 });
-userSchema.index({ phone: 1 });
+// userSchema.index({ email: 1 });
+// userSchema.index({ phone: 1 });
 userSchema.index({ role: 1 });
 
 // Virtual (thuộc tính ảo, không lưu trong DB)
