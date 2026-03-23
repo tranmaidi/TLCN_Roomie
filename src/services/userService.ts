@@ -5,6 +5,7 @@ import { sendOTPEmail } from "../utils/sendEmail";
 import { generateToken } from "../utils/generateToken";
 import { generateOtp } from "../utils/generateOtp";
 import { NotificationService } from "./notificationService";
+import SurveyTemplate from "../models/SurveyTemplate";
 
 const OTP_EXPIRE_MINUTES = 5;
 
@@ -72,16 +73,28 @@ export async function login(email: string, password: string) {
   const user = await User.findOne({ email });
   if (!user) throw new Error("Email chưa đăng ký!");
 
-  // mới: kiểm tra tài khoản bị khóa
   if (user.isLocked) throw new Error("Tài khoản đã bị khóa!");
 
   const isMatch = await bcrypt.compare(password, user.password);
   if (!isMatch) throw new Error("Sai mật khẩu!");
 
-  // Tạo JWT
   const token = generateToken(user);
 
-  return { token, user };
+  // kiểm tra có template active không
+  const hasTemplate = await SurveyTemplate.exists({ isActive: true });
+
+  // tính flag surveyPending (true nếu user chưa từng login trước đó và có template)
+  const surveyPending = !!(!user.hasLoggedIn && hasTemplate);
+
+  // đánh dấu đã login (chỉ lưu nếu trước đó chưa)
+  if (!user.hasLoggedIn) {
+    // non-blocking là OK nhưng cập nhật đồng bộ an toàn hơn ở đây
+    await User.findByIdAndUpdate(user._id, { hasLoggedIn: true }).exec();
+    // cập nhật object trả về để frontend nhận đúng trạng thái
+    (user as any).hasLoggedIn = true;
+  }
+
+  return { token, user, surveyPending };
 }
 
 // Quên mật khẩu - gửi OTP

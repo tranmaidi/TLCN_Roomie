@@ -1,6 +1,7 @@
 import { OpenAI } from "openai";
 import Interaction from "../models/Interaction";
 import User from "../models/User";
+import Survey from "../models/Survey";
 import mongoose from "mongoose";
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -71,7 +72,7 @@ async function callOpenAIWithRetries(messages: any[], maxRetries = 3) {
 }
 
 /* fallback deterministic rank when OpenAI unavailable */
-function fallbackRerank(candidates: any[], query?: string, interactions: any[] = []) {
+function fallbackRerank(candidates: any[], query?: string, interactions: any[] = [], survey: any = null) {
   const q = (query || "").toLowerCase().split(/\s+/).filter(Boolean);
   const recentQueries = interactions.map((it: any) => (it.query || "").toLowerCase()).join(" ");
 
@@ -80,15 +81,61 @@ function fallbackRerank(candidates: any[], query?: string, interactions: any[] =
       let score = 0;
       const title = (p.title || "").toLowerCase();
       const desc = (p.description || "").toLowerCase();
+      const city = (p.city || "").toString().toLowerCase();
+      const categoryName = (p.category && (p.category.name || p.category).toString().toLowerCase()) || "";
 
+      // token match from query
       for (const token of q) {
         if (title.includes(token)) score += 30;
         else if (desc.includes(token)) score += 15;
       }
 
+      // recent queries
       for (const rq of recentQueries.split(/\s+/).filter(Boolean)) {
         if (title.includes(rq)) score += 8;
         if (desc.includes(rq)) score += 4;
+      }
+
+      // use survey signals (simple heuristics)
+      if (survey && Array.isArray(survey.answers)) {
+        for (const ans of survey.answers) {
+          const qid = (ans.questionId || "").toString().toLowerCase();
+          const val = (ans.value || "").toString().toLowerCase();
+
+          if (!val) continue;
+
+          // city preference
+          if (qid.includes("city") || qid.includes("location")) {
+            if (city && city.includes(val)) score += 50;
+            else if (title.includes(val) || desc.includes(val)) score += 20;
+          }
+
+          // category preference
+          if (qid.includes("category") || qid.includes("type")) {
+            if (categoryName && categoryName.includes(val)) score += 40;
+            else if (title.includes(val) || desc.includes(val)) score += 15;
+          }
+
+          // price preference (basic handling for ranges like "<500", "500-1000", ">1000")
+          if (qid.includes("price") || qid.includes("budget")) {
+            const priceVal = Number(p.price);
+            if (!isNaN(priceVal)) {
+              if (typeof ans.value === "string") {
+                const v = ans.value;
+                if (v.includes("<")) {
+                  const n = Number(v.replace(/[^0-9]/g, ""));
+                  if (!isNaN(n) && priceVal <= n) score += 30;
+                } else if (v.includes(">")) {
+                  const n = Number(v.replace(/[^0-9]/g, ""));
+                  if (!isNaN(n) && priceVal >= n) score += 30;
+                } else if (v.includes("-")) {
+                  const parts = v.split("-").map((s: string) => Number(s.replace(/[^0-9]/g, "")));
+                  if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1]) && priceVal >= parts[0] && priceVal <= parts[1]) score += 30;
+                }
+              }
+            }
+          }
+        }
       }
 
       return { post: p, score };
@@ -126,7 +173,8 @@ export async function rerankPostsByUser(userId: string | undefined, query: strin
   if (provider === "none") {
     try {
       const interactions = userId ? await getRecentInteractions(userId, 6) : [];
-      return fallbackRerank(candidates, query, interactions);
+      const survey = userId ? await Survey.findOne({ user: userId }).lean() : null;
+      return fallbackRerank(candidates, query, interactions, survey);
     } catch {
       return candidates;
     }
@@ -156,10 +204,15 @@ export async function rerankPostsByUser(userId: string | undefined, query: strin
     const user = await User.findById(userId).select("name introduce").lean();
     const interactions = await getRecentInteractions(userId, 6);
 
+    // fetch survey (if any) and create short summary for prompt
+    const survey = await Survey.findOne({ user: userId }).lean();
+    const surveySummary = survey && (survey.skipped ? "survey:skipped" : `survey:${JSON.stringify(survey.answers).slice(0,300)}`);
+
     const hasQuerySignal = !!(query && query.trim());
     const hasHistorySignal = (interactions || []).length >= 2;
-    if (!hasQuerySignal && !hasHistorySignal) {
-      return fallbackRerank(candidates, query, interactions);
+    if (!hasQuerySignal && !hasHistorySignal && !survey) {
+      // nothing to personalize
+      return candidates;
     }
 
     const candText = candLimited
@@ -169,7 +222,11 @@ export async function rerankPostsByUser(userId: string | undefined, query: strin
       })
       .join("\n");
 
-    const userSummary = user ? `name:${user.name || ""} | intro:${(user.introduce || "").slice(0, 120)}` : "unknown";
+    const userSummary =
+      user
+        ? `name:${user.name || ""} | intro:${(user.introduce || "").slice(0, 120)}${surveySummary ? " | " + surveySummary : ""}`
+        : "unknown";
+
     const recent = interactions
       .map((it: any) => `${it.type}${it.query ? `("${it.query}")` : it.post ? `(post:${it.post})` : ""}`)
       .join(", ");
@@ -206,7 +263,7 @@ export async function rerankPostsByUser(userId: string | undefined, query: strin
 
     const filteredIds = idList.filter((id) => candidateIds.includes(id));
     if (!filteredIds.length) {
-      return fallbackRerank(candidates, query, interactions);
+      return fallbackRerank(candidates, query, interactions, survey);
     }
 
     setCache(key, filteredIds, 1000 * 60 * 2);
@@ -223,7 +280,8 @@ export async function rerankPostsByUser(userId: string | undefined, query: strin
   } catch {
     try {
       const interactions = userId ? await getRecentInteractions(userId, 6) : [];
-      return fallbackRerank(candidates, query, interactions);
+      const survey = userId ? await Survey.findOne({ user: userId }).lean() : null;
+      return fallbackRerank(candidates, query, interactions, survey);
     } catch {
       return candidates;
     }

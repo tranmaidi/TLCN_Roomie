@@ -1,6 +1,6 @@
 import mongoose, { Document, Schema } from "mongoose";
 
-export type InteractionType = "search" | "view" | "click" | "favorite";
+export type InteractionType = "search" | "view" | "click" | "favorite" | "survey";
 
 export interface IInteraction extends Document {
   user?: mongoose.Types.ObjectId; // optional: only for authenticated users
@@ -14,7 +14,7 @@ export interface IInteraction extends Document {
 const InteractionSchema = new Schema<IInteraction>(
   {
     user: { type: Schema.Types.ObjectId, ref: "User", index: true, required: false },
-    type: { type: String, enum: ["search", "view", "click", "favorite"], required: true },
+    type: { type: String, enum: ["search", "view", "click", "favorite", "survey"], required: true },
     query: { type: String },
     post: { type: Schema.Types.ObjectId, ref: "Post" },
     meta: { type: Schema.Types.Mixed },

@@ -16,6 +16,7 @@ import notificationRoutes from "./routes/notificationRoute";
 import favoriteRoutes from "./routes/favoriteRoutes";
 import noteRoutes from "./routes/noteRoutes";
 import adminRoutes from "./routes/adminRoutes";
+import surveyRoutes from "./routes/surveyRoutes";
 
 // ====== SOCKET ======
 import initMessageSocket from "./socket/messageSocket";
@@ -42,6 +43,7 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/favorites", favoriteRoutes);
 app.use("/api/notes", noteRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/surveys", surveyRoutes);
 
 // ====== SERVER + SOCKET ======
 const PORT = process.env.PORT || 5000;

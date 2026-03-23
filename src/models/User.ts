@@ -20,6 +20,9 @@ export interface IUser extends Document {
   // mới: trạng thái bị khóa
   isLocked?: boolean;
 
+  // mới: đã từng đăng nhập (dùng để quyết định show survey lần đầu)
+  hasLoggedIn?: boolean;
+
   // methods
   hasRole(role: string): boolean;
   isAdmin(): boolean;
@@ -97,6 +100,11 @@ const userSchema = new Schema<IUser>(
       type: Boolean,
       default: false,
     },
+    // đánh dấu đã đăng nhập lần đầu hay chưa (mặc định false)
+    hasLoggedIn: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,
@@ -104,8 +112,6 @@ const userSchema = new Schema<IUser>(
 );
 
 // Index để tối ưu truy vấn
-// userSchema.index({ email: 1 });
-// userSchema.index({ phone: 1 });
 userSchema.index({ role: 1 });
 
 // Virtual (thuộc tính ảo, không lưu trong DB)

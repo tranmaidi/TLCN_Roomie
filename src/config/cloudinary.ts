@@ -4,14 +4,14 @@ import { v2 as cloudinary } from "cloudinary";
 import path from "path";
 import { Request } from "express";
 
-// ====== 1️⃣ Cấu hình Cloudinary ======
+// ====== Cấu hình Cloudinary ======
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME as string,
   api_key: process.env.CLOUDINARY_API_KEY as string,
   api_secret: process.env.CLOUDINARY_API_SECRET as string,
 });
 
-// ====== 2️⃣ Hàm chuẩn hóa tên file ======
+// ====== Hàm chuẩn hóa tên file ======
 const sanitizeBaseName = (filename: string): string => {
   const base = path
     .parse(filename)
@@ -23,7 +23,7 @@ const sanitizeBaseName = (filename: string): string => {
   return base || "file";
 };
 
-// ====== 3️⃣ Xác định loại tài nguyên ======
+// ====== Xác định loại tài nguyên ======
 const getResourceType = (mimetype: string): "image" | "video" | "raw" | "auto" => {
   if (mimetype.startsWith("image/")) return "image";
   if (mimetype.startsWith("video/")) return "video";
@@ -36,7 +36,7 @@ const getResourceType = (mimetype: string): "image" | "video" | "raw" | "auto" =
   return "auto";
 };
 
-// ====== 4️⃣ Storage đa năng (ảnh, video, pdf, docx, v.v.) ======
+// ====== Storage đa năng (ảnh, video, pdf, docx, v.v.) ======
 const storageAny = new CloudinaryStorage({
   cloudinary,
   params: async (req: Request, file: Express.Multer.File) => {
@@ -63,7 +63,7 @@ const storageAny = new CloudinaryStorage({
   },
 });
 
-// ====== 5️⃣ Storage riêng cho avatar (chỉ ảnh) ======
+// ====== Storage riêng cho avatar (chỉ ảnh) ======
 const storageImageOnly = new CloudinaryStorage({
   cloudinary,
   params: async (req: Request, file: Express.Multer.File) => ({
@@ -79,7 +79,7 @@ const storageImageOnly = new CloudinaryStorage({
   }),
 });
 
-// ====== 6️⃣ Bộ lọc file ======
+// ====== Bộ lọc file ======
 const fileFilterAny = (
   req: Request,
   file: Express.Multer.File,
@@ -114,7 +114,7 @@ const fileFilterImageOnly = (
   cb(null, true);
 };
 
-// ====== 7️⃣ Tạo middleware upload ======
+// ====  Tạo middleware upload ======
 const uploadAny = multer({
   storage: storageAny,
   fileFilter: fileFilterAny,
@@ -127,5 +127,5 @@ const uploadImageOnly = multer({
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB cho ảnh
 });
 
-// ====== 8️⃣ Xuất module ======
+// ====== Xuất module ======
 export { cloudinary, uploadAny, uploadImageOnly };
