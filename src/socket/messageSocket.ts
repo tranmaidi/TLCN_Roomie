@@ -3,7 +3,7 @@ import { MessageService } from "../services/messageService";
 
 export default function initMessageSocket(io: Server) {
   io.on("connection", (socket: Socket) => {
-    console.log("🟢 Client connected:", socket.id);
+    console.log("Client connected:", socket.id);
 
     // Tham gia phòng hội thoại
     socket.on("joinConversation", (conversationId: string) => {
@@ -25,7 +25,7 @@ export default function initMessageSocket(io: Server) {
 
         io.to(conversationId).emit("newMessage", message);
       } catch (error: any) {
-        console.error("❌ sendMessage error:", error.message);
+        console.error("sendMessage error:", error.message);
       }
     });
 
@@ -36,7 +36,7 @@ export default function initMessageSocket(io: Server) {
         const message = await MessageService.editMessage(messageId, userId, text);
         io.to(conversationId).emit("messageEdited", message);
       } catch (error: any) {
-        console.error("❌ editMessage error:", error.message);
+        console.error("editMessage error:", error.message);
       }
     });
 
@@ -47,7 +47,7 @@ export default function initMessageSocket(io: Server) {
         const message = await MessageService.recallMessage(messageId, userId);
         io.to(conversationId).emit("messageRecalled", message);
       } catch (error: any) {
-        console.error("❌ recallMessage error:", error.message);
+        console.error("recallMessage error:", error.message);
       }
     });
 
@@ -58,12 +58,12 @@ export default function initMessageSocket(io: Server) {
         const message = await MessageService.markAsRead(messageId, userId);
         io.to(conversationId).emit("messageRead", message);
       } catch (error: any) {
-        console.error("❌ messageSeen error:", error.message);
+        console.error("messageSeen error:", error.message);
       }
     });
 
     socket.on("disconnect", () => {
-      console.log("🔴 Client disconnected:", socket.id);
+      console.log("Client disconnected:", socket.id);
     });
   });
 }

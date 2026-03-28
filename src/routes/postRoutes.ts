@@ -12,6 +12,9 @@ router.post("/", authMiddleware, uploadAny.array("media", 10), postController.cr
 // Tìm kiếm & lọc bài viết (public - middleware sẽ attach user nếu token có)
 router.get("/search", optionalAuthMiddleware, postController.searchPosts);
 
+// Tìm kiếm theo bán kính (user gửi lat, lng, maxDistance)
+router.get("/nearby", optionalAuthMiddleware, postController.getNearbyPosts);
+
 // Lấy tất cả bài viết đã duyệt (public - middleware will attach user if token present)
 router.get("/approved", optionalAuthMiddleware, postController.getApprovedPosts);
 

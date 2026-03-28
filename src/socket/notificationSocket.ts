@@ -9,7 +9,7 @@ export const notificationSocket = (io: Server) => {
     socket.on("join", (userId: string) => {
       if (!userId) return;
       socket.join(userId);
-      console.log(`✅ User ${userId} joined room ${userId}`);
+      console.log(`User ${userId} joined room ${userId}`);
     });
 
     // Gửi thông báo mới realtime
@@ -18,7 +18,7 @@ export const notificationSocket = (io: Server) => {
         const notification = await NotificationService.createNotification(data);
         io.to(data.user).emit("newNotification", notification);
       } catch (error: any) {
-        console.error("❌ sendNotification error:", error.message);
+        console.error("sendNotification error:", error.message);
       }
     });
 
@@ -30,7 +30,7 @@ export const notificationSocket = (io: Server) => {
           io.to(updated.user.toString()).emit("notificationUpdated", updated);
         }
       } catch (error: any) {
-        console.error("❌ markRead error:", error.message);
+        console.error("markRead error:", error.message);
       }
     });
 
@@ -40,7 +40,7 @@ export const notificationSocket = (io: Server) => {
         await NotificationService.markAllAsRead(userId);
         io.to(userId).emit("notificationsMarkedAllRead");
       } catch (error: any) {
-        console.error("❌ markAllRead error:", error.message);
+        console.error("markAllRead error:", error.message);
       }
     });
 
@@ -52,12 +52,12 @@ export const notificationSocket = (io: Server) => {
           io.to(deleted.user.toString()).emit("notificationDeleted", deleted._id);
         }
       } catch (error: any) {
-        console.error("❌ deleteNotification error:", error.message);
+        console.error("deleteNotification error:", error.message);
       }
     });
 
     socket.on("disconnect", () => {
-      console.log("🔴 User disconnected:", socket.id);
+      console.log("User disconnected:", socket.id);
     });
   });
 };

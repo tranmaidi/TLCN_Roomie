@@ -17,6 +17,10 @@ export interface IPost extends Document {
   category: mongoose.Types.ObjectId;
   owner: mongoose.Types.ObjectId;
   searchNormalized?: string;
+  location?: {
+    type: "Point";
+    coordinates: [number, number]; // [lng, lat]
+  };
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -36,10 +40,28 @@ const postSchema = new Schema<IPost>(
     statusApproval: { type: Boolean, default: false },
     category: { type: Schema.Types.ObjectId, ref: "Category", required: true },
     owner: { type: Schema.Types.ObjectId, ref: "User", required: true },
-    searchNormalized: { type: String, index: true , select: false },
+    searchNormalized: { type: String, index: true, select: false },
+    // Thêm location GeoJSON
+    location: {
+      type: {
+        type: String,
+        enum: ["Point"],
+        default: "Point",
+      },
+      coordinates: {
+        type: [Number], // [lng, lat]
+        required: false,
+      },
+    },
   },
   { timestamps: true }
 );
+
+// Thêm 2dsphere index để query theo bán kính
+postSchema.index({ location: "2dsphere" });
+
+// Index hỗ trợ tìm nhanh theo vùng và giá
+postSchema.index({ city: 1, district: 1, price: 1 });
 
 // Middleware: tự động tạo bản không dấu để hỗ trợ tìm kiếm tiếng Việt không dấu
 postSchema.pre("save", function (next) {
@@ -48,9 +70,6 @@ postSchema.pre("save", function (next) {
   post.searchNormalized = removeVietnameseTones(combined.toLowerCase());
   next();
 });
-
-// Index hỗ trợ tìm nhanh theo vùng và giá
-postSchema.index({ city: 1, district: 1, price: 1 });
 
 const Post = mongoose.model<IPost>("Post", postSchema);
 export default Post;

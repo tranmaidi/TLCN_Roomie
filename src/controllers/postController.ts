@@ -227,3 +227,33 @@ export const searchPosts = async (req: Request, res: Response) => {
         res.status(500).json({ message: err.message || "Lỗi server!" });
     }
 };
+
+export const getNearbyPosts = async (req: Request, res: Response) => {
+  try {
+    const lat = parseFloat(req.query.lat as string);
+    const lng = parseFloat(req.query.lng as string);
+    const maxDistance = parseInt(req.query.maxDistance as string) || 5000; // mét, mặc định 5km
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+
+    // validate input
+    if (isNaN(lat) || isNaN(lng)) {
+      return res.status(400).json({ message: "lat và lng phải là số hợp lệ" });
+    }
+
+    const result = await postService.getNearbyPosts(lat, lng, maxDistance, page, limit);
+
+    // record interaction (optional)
+    const userId = (req as any).user?.id;
+    if (userId) {
+      recordInteraction(userId, "search", { query: `nearby:${lat},${lng}` }).catch((e) => {
+        console.error("[postController] recordInteraction failed", e);
+      });
+    }
+
+    res.status(200).json(result);
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({ message: err.message || "Lỗi server!" });
+  }
+};

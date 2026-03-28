@@ -3,10 +3,29 @@ import { removeVietnameseTones } from "../utils/normalizeText";
 import mongoose from "mongoose";
 import User from "../models/User";
 import { NotificationService } from "./notificationService";
+import { getLatLngFromAddress, formatAddress } from "../utils/geocoding";
 
 // Tạo bài viết mới
 export const createPost = async (data: Partial<IPost>, io?: any) => {
-    const post = new Post(data);
+    // Lấy tọa độ từ địa chỉ nếu có đủ thông tin
+    let location: any = undefined;
+    if (data.address && (data.city || data.district)) {
+      const fullAddress = formatAddress(data.address, data.ward, data.district, data.city);
+      const coords = await getLatLngFromAddress(fullAddress);
+      if (coords) {
+        location = {
+          type: "Point",
+          coordinates: [coords.lng, coords.lat], // [lng, lat]
+        };
+      } else {
+        console.warn(`[createPost] Could not geocode address: ${fullAddress}`);
+      }
+    }
+
+    const post = new Post({
+      ...data,
+      ...(location ? { location } : {}),
+    });
     const savedPost = await post.save();
 
     // --- Gửi thông báo đến tất cả admin ---
@@ -342,4 +361,52 @@ export const searchPosts = async (query: SearchQuery) => {
             totalPages: Math.ceil(total / limit),
         },
     };
+};
+
+/**
+ * Tìm bài viết gần đây dựa trên tọa độ (lat, lng) + bán kính
+ */
+export const getNearbyPosts = async (lat: number, lng: number, maxDistance = 5000, page = 1, limit = 10) => {
+  const skip = (page - 1) * limit;
+
+  const [posts, total] = await Promise.all([
+    Post.find({
+      statusApproval: true,
+      location: {
+        $near: {
+          $geometry: {
+            type: "Point",
+            coordinates: [lng, lat], // [lng, lat]
+          },
+          $maxDistance: maxDistance, // mét
+        },
+      },
+    })
+      .populate("category", "name")
+      .populate("owner", "name email phone")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit),
+    Post.countDocuments({
+      statusApproval: true,
+      location: {
+        $near: {
+          $geometry: {
+            type: "Point",
+            coordinates: [lng, lat],
+          },
+          $maxDistance: maxDistance,
+        },
+      },
+    }),
+  ]);
+
+  return {
+    content: posts,
+    pagination: {
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+    },
+  };
 };
