@@ -78,9 +78,9 @@ export async function getLatLngFromAddress(address: string, fallbackCity?: strin
     }
   }
 
-  //4: Fallback cuối cùng (Hanoi)
-  console.warn(`[geocoding] All methods failed, using Hanoi as default`);
-  return CITY_COORDINATES["Hanoi"];
+  //4: Fallback cuối cùng (Hồ Chí Minh)
+  console.warn(`[geocoding] All methods failed, using Ho Chi Minh as default`);
+  return CITY_COORDINATES["Hồ Chí Minh"];
 }
 
 /**

@@ -226,17 +226,24 @@ export const approvePost = async (postId: string) => {
 };
 
 // Lấy tất cả bài viết đã duyệt
-export const getApprovedPosts = async (page = 1, limit = 10) => {
+export const getApprovedPosts = async (page = 1, limit = 10, userId?: string) => {
     const skip = (page - 1) * limit;
 
+    // Filter loại bỏ bài của chính user
+    const ownerFilter = userId ? new mongoose.Types.ObjectId(userId) : null;
+    const filters: any = { statusApproval: true };
+    if (ownerFilter) {
+      filters.owner = { $ne: ownerFilter };
+    }
+
     const [posts, total] = await Promise.all([
-        Post.find({ statusApproval: true })
+        Post.find(filters)
             .populate("category", "name")
             .populate("owner", "name email")
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(limit),
-        Post.countDocuments({ statusApproval: true })
+        Post.countDocuments(filters)
     ]);
 
     return {
@@ -365,48 +372,103 @@ export const searchPosts = async (query: SearchQuery) => {
 
 /**
  * Tìm bài viết gần đây dựa trên tọa độ (lat, lng) + bán kính
+ * Dùng aggregation pipeline với $geoNear
  */
-export const getNearbyPosts = async (lat: number, lng: number, maxDistance = 5000, page = 1, limit = 10) => {
+export const getNearbyPosts = async (lat: number, lng: number, maxDistance = 5000, page = 1, limit = 10, userId?: string) => {
   const skip = (page - 1) * limit;
 
-  const [posts, total] = await Promise.all([
-    Post.find({
-      statusApproval: true,
-      location: {
-        $near: {
-          $geometry: {
+  // Filter loại bỏ bài của chính user
+  const ownerFilter = userId ? new mongoose.Types.ObjectId(userId) : null;
+
+  const [posts, countResult] = await Promise.all([
+    Post.aggregate([
+      {
+        $geoNear: {
+          near: {
             type: "Point",
             coordinates: [lng, lat], // [lng, lat]
           },
-          $maxDistance: maxDistance, // mét
+          distanceField: "distance",
+          maxDistance: maxDistance,
+          spherical: true,
+          query: { 
+            statusApproval: true,
+            ...(ownerFilter ? { owner: { $ne: ownerFilter } } : {}), // ⭐ Loại bỏ bài của user
+          },
         },
       },
-    })
-      .populate("category", "name")
-      .populate("owner", "name email phone")
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit),
+      {
+        $sort: { createdAt: -1 },
+      },
+      {
+        $skip: skip,
+      },
+      {
+        $limit: limit,
+      },
+      {
+        $lookup: {
+          from: "categories",
+          localField: "category",
+          foreignField: "_id",
+          as: "category",
+        },
+      },
+      {
+        $unwind: {
+          path: "$category",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $lookup: {
+          from: "users",
+          localField: "owner",
+          foreignField: "_id",
+          as: "owner",
+        },
+      },
+      {
+        $unwind: {
+          path: "$owner",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $project: {
+          _id: 1,
+          title: 1,
+          description: 1,
+          price: 1,
+          city: 1,
+          district: 1,
+          ward: 1,
+          address: 1,
+          images: 1,
+          available: 1,
+          statusApproval: 1,
+          distance: 1,
+          "category.name": 1,
+          "owner.name": 1,
+          "owner.email": 1,
+          "owner.phone": 1,
+          createdAt: 1,
+        },
+      },
+    ]),
     Post.countDocuments({
       statusApproval: true,
-      location: {
-        $near: {
-          $geometry: {
-            type: "Point",
-            coordinates: [lng, lat],
-          },
-          $maxDistance: maxDistance,
-        },
-      },
+      location: { $exists: true, $ne: null },
+      ...(ownerFilter ? { owner: { $ne: ownerFilter } } : {}),
     }),
   ]);
 
   return {
     content: posts,
     pagination: {
-      total,
+      total: countResult,
       page,
-      totalPages: Math.ceil(total / limit),
+      totalPages: Math.ceil(countResult / limit),
     },
   };
 };
