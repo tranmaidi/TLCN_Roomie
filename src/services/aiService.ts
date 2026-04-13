@@ -76,8 +76,8 @@ function fallbackRerank(candidates: any[], query?: string, interactions: any[] =
   const q = (query || "").toLowerCase().split(/\s+/).filter(Boolean);
   const recentQueries = interactions.map((it: any) => (it.query || "").toLowerCase()).join(" ");
 
-  return [...candidates]
-    .map((p: any) => {
+  const scored = [...candidates]
+  .map((p: any) => {
       let score = 0;
       const title = (p.title || "").toLowerCase();
       const desc = (p.description || "").toLowerCase();
@@ -142,6 +142,14 @@ function fallbackRerank(candidates: any[], query?: string, interactions: any[] =
     })
     .sort((a, b) => b.score - a.score)
     .map((s) => s.post);
+
+    // annotate ai_score (normalized by position)
+    const n = scored.length;
+    for (let i = 0; i < n; i++) {
+      try { scored[i].ai_score = n > 1 ? (n - i) / n : 1; } catch {}
+    }
+
+    return scored;
 }
 
 async function getRecentInteractions(userId: string, limit = 6) {
@@ -170,17 +178,27 @@ function setCache(key: string, ids: string[], ttlMs = 1000 * 60 * 2) {
 
 export async function rerankPostsByUser(userId: string | undefined, query: string | undefined, candidates: any[]) {
   const provider = (process.env.AI_PROVIDER || "openai").toLowerCase();
+  const debug = (process.env.AI_DEBUG || "").toString().toLowerCase() === "true";
+  const dlog = (...args: any[]) => {
+    if (debug) console.log("[aiService:rerank]", ...args);
+  };
+
+  dlog("provider=", provider, "userId=", userId ? "yes" : "no", "query=", (query || "").slice(0, 80), "candidates=", Array.isArray(candidates) ? candidates.length : 0);
+
   if (provider === "none") {
     try {
+      dlog("using fallbackRerank (AI_PROVIDER=none)");
       const interactions = userId ? await getRecentInteractions(userId, 6) : [];
       const survey = userId ? await Survey.findOne({ user: userId }).lean() : null;
       return fallbackRerank(candidates, query, interactions, survey);
     } catch {
+      dlog("fallbackRerank failed -> return original candidates");
       return candidates;
     }
   }
 
   if (!userId || !candidates || candidates.length < 3) {
+  dlog("skip rerank (missing userId or not enough candidates)");
     return candidates;
   }
 
@@ -190,6 +208,7 @@ export async function rerankPostsByUser(userId: string | undefined, query: strin
 
   const cached = getFromCache(key);
   if (cached) {
+  dlog("cache hit -> return cached order", { cachedCount: cached.length });
     const orderMap = new Map<string, number>();
     cached.forEach((id, idx) => orderMap.set(id, idx));
     const sorted = [...candLimited].sort((a: any, b: any) => {
@@ -197,10 +216,16 @@ export async function rerankPostsByUser(userId: string | undefined, query: strin
       const ib = orderMap.has(b._id.toString()) ? orderMap.get(b._id.toString())! : 9999;
       return ia - ib;
     });
+    // annotate ai_score for cached order
+    for (let i = 0; i < sorted.length; i++) {
+      try { sorted[i].ai_score = sorted.length > 1 ? (sorted.length - i) / sorted.length : 1; } catch {}
+    }
+
     return sorted.concat(candidates.slice(candLimited.length));
   }
 
   try {
+  dlog("cache miss -> calling OpenAI");
     const user = await User.findById(userId).select("name introduce").lean();
     const interactions = await getRecentInteractions(userId, 6);
 
@@ -212,6 +237,7 @@ export async function rerankPostsByUser(userId: string | undefined, query: strin
     const hasHistorySignal = (interactions || []).length >= 2;
     if (!hasQuerySignal && !hasHistorySignal && !survey) {
       // nothing to personalize
+  dlog("no query/history/survey signal -> return original candidates");
       return candidates;
     }
 
@@ -245,6 +271,8 @@ export async function rerankPostsByUser(userId: string | undefined, query: strin
       2
     );
 
+  dlog("OpenAI responded", { hasChoices: !!resp.choices?.length });
+
     const content = resp.choices?.[0]?.message?.content || "";
 
     let idList: string[] = [];
@@ -263,6 +291,7 @@ export async function rerankPostsByUser(userId: string | undefined, query: strin
 
     const filteredIds = idList.filter((id) => candidateIds.includes(id));
     if (!filteredIds.length) {
+  dlog("OpenAI returned no valid ids -> fallbackRerank");
       return fallbackRerank(candidates, query, interactions, survey);
     }
 
@@ -275,14 +304,25 @@ export async function rerankPostsByUser(userId: string | undefined, query: strin
       const ib = orderMap.has(b._id.toString()) ? orderMap.get(b._id.toString())! : 9999;
       return ia - ib;
     });
+    // annotate ai_score based on AI rank
+    for (let i = 0; i < sorted.length; i++) {
+      try { sorted[i].ai_score = sorted.length > 1 ? (sorted.length - i) / sorted.length : 1; } catch {}
+    }
 
     return sorted.concat(candidates.slice(candLimited.length));
-  } catch {
+  } catch (err: any) {
+    dlog("OpenAI path failed -> fallbackRerank", {
+      status: err?.status,
+      code: err?.code,
+      message: err?.message,
+    });
     try {
       const interactions = userId ? await getRecentInteractions(userId, 6) : [];
       const survey = userId ? await Survey.findOne({ user: userId }).lean() : null;
-      return fallbackRerank(candidates, query, interactions, survey);
+      const fr = fallbackRerank(candidates, query, interactions, survey);
+      return fr;
     } catch {
+      dlog("fallbackRerank failed -> return original candidates");
       return candidates;
     }
   }

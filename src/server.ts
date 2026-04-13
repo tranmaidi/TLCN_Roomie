@@ -17,6 +17,9 @@ import favoriteRoutes from "./routes/favoriteRoutes";
 import noteRoutes from "./routes/noteRoutes";
 import adminRoutes from "./routes/adminRoutes";
 import surveyRoutes from "./routes/surveyRoutes";
+import subscriptionRoutes from "./routes/subscriptionRoutes";
+import reviewRoutes from "./routes/reviewRoutes";
+import startSubscriptionCron from "./cron/subscriptionCron";
 
 // ====== SOCKET ======
 import initMessageSocket from "./socket/messageSocket";
@@ -27,7 +30,16 @@ const app: Application = express();
 
 // ====== MIDDLEWARE ======
 app.use(cors());
-app.use(express.json());
+
+// Middleware này lưu raw body cho ZaloPay callback
+app.use(express.json({
+  verify: (req: any, res, buf) => {
+    req.rawBody = buf.toString();
+  }
+}));
+
+// Parse application/x-www-form-urlencoded (ZaloPay callback uses form fields `data` and `mac`)
+app.use(express.urlencoded({ extended: true }));
 
 // ====== DATABASE ======
 connectDB();
@@ -44,6 +56,8 @@ app.use("/api/favorites", favoriteRoutes);
 app.use("/api/notes", noteRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/surveys", surveyRoutes);
+app.use("/api/subscriptions", subscriptionRoutes);
+app.use("/api/reviews", reviewRoutes);
 
 // ====== SERVER + SOCKET ======
 const PORT = process.env.PORT || 5000;
@@ -62,6 +76,9 @@ app.set("io", io);
 // Tích hợp các module socket
 initMessageSocket(io);
 notificationSocket(io);
+
+// start subscription cron tasks
+startSubscriptionCron();
 
 // ====== START ======
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));

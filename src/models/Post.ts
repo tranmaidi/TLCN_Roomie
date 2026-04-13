@@ -23,6 +23,10 @@ export interface IPost extends Document {
   };
   createdAt?: Date;
   updatedAt?: Date;
+  priority_level?: number;
+  priority_expiry?: Date;
+  partnerPriority?: number;
+  partnerExpiry?: Date;
 }
 
 const postSchema = new Schema<IPost>(
@@ -53,6 +57,11 @@ const postSchema = new Schema<IPost>(
         required: false,
       },
     },
+  // Priority fields (subscription + partner)
+  priority_level: { type: Number, default: 0 },
+  priority_expiry: { type: Date },
+  partnerPriority: { type: Number, default: 0 }, // 0 none, 1 partner, 2 featured
+  partnerExpiry: { type: Date },
   },
   { timestamps: true }
 );
@@ -65,7 +74,7 @@ postSchema.index({ city: 1, district: 1, price: 1 });
 
 // Middleware: tự động tạo bản không dấu để hỗ trợ tìm kiếm tiếng Việt không dấu
 postSchema.pre("save", function (next) {
-  const post = this as IPost;
+  const post = this as unknown as IPost;
   const combined = `${post.title} ${post.description} ${post.address}`;
   post.searchNormalized = removeVietnameseTones(combined.toLowerCase());
   next();

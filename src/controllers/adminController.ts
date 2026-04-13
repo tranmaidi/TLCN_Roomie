@@ -23,4 +23,25 @@ export class AdminController {
       return res.status(400).json({ success: false, message: error.message });
     }
   }
+
+  // GET /api/admin/revenue/subscriptions?year=2026&month=4
+  static async revenueFromSubscriptions(req: Request, res: Response) {
+    try {
+      const yearRaw = (req.query as any)?.year;
+      const monthRaw = (req.query as any)?.month;
+
+      const year = parseInt(String(yearRaw), 10);
+      const month = monthRaw !== undefined ? parseInt(String(monthRaw), 10) : undefined;
+
+      if (!yearRaw || Number.isNaN(year)) {
+        return res.status(400).json({ success: false, message: "year is required" });
+      }
+
+      const data = await AdminService.getRevenueFromSubscriptions({ year, month });
+      return res.json({ success: true, data });
+    } catch (error: any) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+  }
+
 }

@@ -12,6 +12,7 @@ router.use(requireAdmin);
 
 router.get("/stats", AdminController.stats);
 router.get("/posts-by-category", AdminController.postsByCategory);
+router.get("/revenue/subscriptions", AdminController.revenueFromSubscriptions);
 
 // Survey template management (admin)
 router.get("/surveys/templates", SurveyTemplateController.list);

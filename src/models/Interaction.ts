@@ -3,7 +3,7 @@ import mongoose, { Document, Schema } from "mongoose";
 export type InteractionType = "search" | "view" | "click" | "favorite" | "survey";
 
 export interface IInteraction extends Document {
-  user?: mongoose.Types.ObjectId; // optional: only for authenticated users
+  user?: mongoose.Types.ObjectId;
   type: InteractionType;
   query?: string;
   post?: mongoose.Types.ObjectId;

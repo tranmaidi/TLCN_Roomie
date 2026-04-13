@@ -15,10 +15,10 @@ const CITY_COORDINATES: Record<string, Coordinates> = {
 
 /**
  * Lấy tọa độ từ địa chỉ — ưu tiên Mapbox → fallback Nominatim → fallback city
- * Đảm bảo luôn trả về tọa độ
+ * Trả về null nếu không tìm được tọa độ (caller phải xử lý)
  */
-export async function getLatLngFromAddress(address: string, fallbackCity?: string): Promise<Coordinates> {
-  //1: Mapbox Geocoding API (ưu tiên — nhanh, chính xác, miễn phí)
+export async function getLatLngFromAddress(address: string, fallbackCity?: string): Promise<Coordinates | null> {
+  //1: Mapbox Geocoding API
   if (process.env.MAPBOX_ACCESS_TOKEN) {
     try {
       const encodedAddress = encodeURIComponent(address);
@@ -43,7 +43,7 @@ export async function getLatLngFromAddress(address: string, fallbackCity?: strin
     }
   }
 
-  //2: Nominatim (fallback miễn phí)
+  //2: Nominatim
   try {
     const res = await axios.get("https://nominatim.openstreetmap.org/search", {
       params: {
@@ -69,7 +69,7 @@ export async function getLatLngFromAddress(address: string, fallbackCity?: strin
     console.warn(`[geocoding] Nominatim error: ${error.message}`);
   }
 
-  //3: Fallback tọa độ thành phố (luôn có kết quả)
+  //3: Fallback tọa độ thành phố (nếu có)
   if (fallbackCity) {
     const cityCoords = CITY_COORDINATES[fallbackCity];
     if (cityCoords) {
@@ -78,9 +78,9 @@ export async function getLatLngFromAddress(address: string, fallbackCity?: strin
     }
   }
 
-  //4: Fallback cuối cùng (Hồ Chí Minh)
-  console.warn(`[geocoding] All methods failed, using Ho Chi Minh as default`);
-  return CITY_COORDINATES["Hồ Chí Minh"];
+  // Không tìm được tọa độ
+  console.warn(`[geocoding] All methods failed for address: "${address}" — returning null`);
+  return null;
 }
 
 /**

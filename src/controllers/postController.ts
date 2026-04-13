@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import * as postService from "../services/postService";
 import { rerankPostsByUser, recordInteraction, getLatestSearchQuery } from "../services/aiService";
+import { applyBusinessRanking } from "../services/postService";
 
 export const createPost = async (req: Request & { user?: any }, res: Response) => {
     try {
@@ -120,6 +121,33 @@ export const getMyPosts = async (req: Request & { user?: any }, res: Response) =
     }
 };
 
+// Lấy bài viết đã bán (available=false) của chính mình
+export const getMySoldPosts = async (req: Request & { user?: any }, res: Response) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+
+    const posts = await postService.getMySoldPosts(req.user.id, page, limit);
+    return res.json(posts);
+  } catch (err: any) {
+    return res.status(400).json({ message: err.message });
+  }
+};
+
+// Lấy bài viết đã bán (available=false) của người khác (public)
+export const getSoldPostsByUser = async (req: Request, res: Response) => {
+  try {
+    const ownerId = req.params.userId;
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+
+    const posts = await postService.getSoldPostsByUser(ownerId, page, limit);
+    return res.json(posts);
+  } catch (err: any) {
+    return res.status(400).json({ message: err.message });
+  }
+};
+
 export const getAllPostsAdmin = async (req: Request, res: Response) => {
     try {
         const page = parseInt(req.query.page as string) || 1;
@@ -150,7 +178,7 @@ export const getApprovedPosts = async (req: Request, res: Response) => {
     const userId = (req as any).user?.id;
     const posts = await postService.getApprovedPosts(page, limit, userId);
 
-    if (userId && posts?.content?.length) {
+  if (userId && posts?.content?.length) {
       try {
         await recordInteraction(userId, "view", { meta: { action: "listApproved" } });
       } catch (e) {
@@ -160,6 +188,8 @@ export const getApprovedPosts = async (req: Request, res: Response) => {
       try {
         const latestQuery = await getLatestSearchQuery(userId);
         posts.content = await rerankPostsByUser(userId, latestQuery, posts.content);
+        // apply business ranking after AI rerank to include partner/subscription boost
+        posts.content = applyBusinessRanking(userId, posts.content);
       } catch (e) {
         console.error("[postController] rerank failed", e);
       }
@@ -252,3 +282,26 @@ export const getNearbyPosts = async (req: Request, res: Response) => {
     res.status(500).json({ message: err.message || "Lỗi server!" });
   }
 };
+
+
+export const getSponsored = async (req: Request, res: Response) => {
+  try {
+  const page = parseInt(req.query.page as string) || 1;
+  const limit = parseInt(req.query.limit as string) || 10;
+  const result = await postService.getSponsoredPosts(page, limit);
+  return res.json({ success: true, ...result });
+  } catch (err: any) {
+    return res.status(500).json({ message: err.message });
+  }
+}
+
+export const getNewest = async (req: Request, res: Response) => {
+  try {
+  const page = parseInt(req.query.page as string) || 1;
+  const limit = parseInt(req.query.limit as string) || 10;
+  const result = await postService.getNewestPosts(page, limit);
+  return res.json({ success: true, ...result });
+  } catch (err: any) {
+    return res.status(500).json({ message: err.message });
+  }
+}

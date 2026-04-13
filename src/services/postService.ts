@@ -4,28 +4,57 @@ import mongoose from "mongoose";
 import User from "../models/User";
 import { NotificationService } from "./notificationService";
 import { getLatLngFromAddress, formatAddress } from "../utils/geocoding";
+import Subscription from "../models/Subscription";
+import Package from "../models/Package";
 
 // Tạo bài viết mới
 export const createPost = async (data: Partial<IPost>, io?: any) => {
+  try {
     // Lấy tọa độ từ địa chỉ nếu có đủ thông tin
     let location: any = undefined;
-    if (data.address && (data.city || data.district)) {
+    if (data.address) {
       const fullAddress = formatAddress(data.address, data.ward, data.district, data.city);
-      const coords = await getLatLngFromAddress(fullAddress);
-      if (coords) {
-        location = {
-          type: "Point",
-          coordinates: [coords.lng, coords.lat], // [lng, lat]
-        };
-      } else {
-        console.warn(`[createPost] Could not geocode address: ${fullAddress}`);
+      try {
+        const coords = await getLatLngFromAddress(fullAddress, data.city);
+        if (coords) {
+          location = {
+            type: "Point",
+            coordinates: [coords.lng, coords.lat], // [lng, lat]
+          };
+          console.log(`[createPost] Geocoded address: ${fullAddress} -> [${coords.lng}, ${coords.lat}]`);
+        } else {
+          console.warn(`[createPost] Geocoding returned null for: ${fullAddress} — post will be saved without location`);
+        }
+      } catch (geocodeErr) {
+        console.error(`[createPost] Geocoding error for address "${fullAddress}":`, geocodeErr);
       }
     }
 
-    const post = new Post({
-      ...data,
-      ...(location ? { location } : {}),
-    });
+    const postData: any = { ...data };
+    // Nếu owner có subscription active thì áp priority tương ứng
+    try {
+      const ownerId = data.owner;
+      if (ownerId) {
+        const now = new Date();
+        const activeSub = await Subscription.findOne({ user: ownerId, status: 'active', expiryAt: { $gt: now } }).populate('package');
+        if (activeSub) {
+          const pkg: any = (activeSub as any).package || (await Package.findById((activeSub as any).package));
+          if (pkg) {
+            postData.priority_level = pkg.priority_level ?? 0;
+            postData.priority_expiry = (activeSub as any).expiryAt || undefined;
+            // also propagate partnerPriority if needed (kept as default 0)
+            console.log(`[createPost] Applying subscription priority to new post: user=${ownerId}, priority_level=${postData.priority_level}`);
+          }
+        }
+      }
+    } catch (e) {
+      console.error('[createPost] Failed to apply subscription priority:', e);
+    }
+    if (location) {
+      postData.location = location;
+    }
+
+    const post = new Post(postData);
     const savedPost = await post.save();
 
     // --- Gửi thông báo đến tất cả admin ---
@@ -47,6 +76,10 @@ export const createPost = async (data: Partial<IPost>, io?: any) => {
     await Promise.all(notificationPromises);
 
     return savedPost;
+  } catch (error) {
+    console.error('[postService.createPost] Error', error);
+    throw error;
+  }
 };
 
 // Xóa bài viết (của chủ sở hữu hoặc admin)
@@ -174,6 +207,60 @@ export const getMyPosts = async (userId: string, page = 1, limit = 10) => {
     };
 };
 
+// Lấy bài viết đã bán (available=false) của chính mình
+export const getMySoldPosts = async (userId: string, page = 1, limit = 10) => {
+  const skip = (page - 1) * limit;
+
+  const filters: any = { owner: userId, available: false };
+
+  const [posts, total] = await Promise.all([
+    Post.find(filters)
+      .populate("category", "name")
+      .sort({ updatedAt: -1 })
+      .skip(skip)
+      .limit(limit),
+    Post.countDocuments(filters),
+  ]);
+
+  return {
+    content: posts,
+    pagination: {
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+    },
+  };
+};
+
+// Lấy bài viết đã bán (available=false) của 1 user khác (public)
+export const getSoldPostsByUser = async (ownerId: string, page = 1, limit = 10) => {
+  if (!mongoose.Types.ObjectId.isValid(ownerId)) {
+    throw new Error("UserId không hợp lệ");
+  }
+
+  const skip = (page - 1) * limit;
+  const filters: any = { owner: ownerId, available: false, statusApproval: true };
+
+  const [posts, total] = await Promise.all([
+    Post.find(filters)
+      .populate("category", "name -_id")
+      .populate("owner", "name email phone")
+      .sort({ updatedAt: -1 })
+      .skip(skip)
+      .limit(limit),
+    Post.countDocuments(filters),
+  ]);
+
+  return {
+    content: posts,
+    pagination: {
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+    },
+  };
+};
+
 
 // Lấy tất cả bài viết (admin)
 export const getAllPostsAdmin = async (page = 1, limit = 10) => {
@@ -231,7 +318,7 @@ export const getApprovedPosts = async (page = 1, limit = 10, userId?: string) =>
 
     // Filter loại bỏ bài của chính user
     const ownerFilter = userId ? new mongoose.Types.ObjectId(userId) : null;
-    const filters: any = { statusApproval: true };
+    const filters: any = { statusApproval: true, available: true };
     if (ownerFilter) {
       filters.owner = { $ne: ownerFilter };
     }
@@ -350,7 +437,7 @@ export const searchPosts = async (query: SearchQuery) => {
 
     const skip = (page - 1) * limit;
 
-    const [posts, total] = await Promise.all([
+  const [posts, total] = await Promise.all([
         Post.find(filters)
             .sort({ createdAt: -1 })
             .skip(skip)
@@ -369,6 +456,116 @@ export const searchPosts = async (query: SearchQuery) => {
         },
     };
 };
+
+// Apply business ranking (combine AI order with priority fields) - minimal implementation
+export function applyBusinessRanking(userId: string | undefined, posts: any[]) {
+  // weights
+  const w_ai = 0.6, w_sub = 0.25, w_partner = 0.15;
+  // Prefer explicit ai_score produced by aiService; if missing, fall back to position proxy
+  const n = posts.length;
+  const scored = posts.map((p, idx) => {
+    const ai_score = typeof p.ai_score === "number" ? p.ai_score : (n - idx) / Math.max(n, 1);
+    const sub = (p.priority_level === 1) ? 0.4 : (p.priority_level === 2 ? 0.15 : 0);
+    const partner = (p.partnerPriority === 2) ? 0.5 : (p.partnerPriority === 1 ? 0.25 : 0);
+    const partnerValid = p.partnerExpiry ? new Date(p.partnerExpiry) > new Date() : true;
+    const final = w_ai * ai_score + w_sub * sub + (partnerValid ? w_partner * partner : 0);
+    return { post: p, final, isPartner: (p.partnerPriority || 0) > 0 };
+  });
+
+  scored.sort((a, b) => b.final - a.final);
+
+  // Enforce at most 2 partner posts in top 10
+  const TOP_LIMIT = 10;
+  const PARTNER_MAX = 2;
+
+  const top = scored.slice(0, TOP_LIMIT);
+  const rest = scored.slice(TOP_LIMIT);
+
+  const partnersInTop = top.filter((s) => s.isPartner);
+  if (partnersInTop.length > PARTNER_MAX) {
+    // Keep the first PARTNER_MAX partners (highest final), demote others into the rest preserving order
+    const kept: any[] = [];
+    const demoted: any[] = [];
+    let partnerKept = 0;
+    for (const item of top) {
+      if (item.isPartner) {
+        if (partnerKept < PARTNER_MAX) {
+          kept.push(item);
+          partnerKept++;
+        } else {
+          demoted.push(item);
+        }
+      } else {
+        kept.push(item);
+      }
+    }
+
+    // New top is kept (non-partners + allowed partners), then fill with best of rest (non-partners first)
+    const newTop = [...kept];
+
+    // from rest + demoted, pick items to fill to TOP_LIMIT by final score (demoted should re-enter candidate pool)
+    const pool = [...rest, ...demoted];
+    pool.sort((a, b) => b.final - a.final);
+    while (newTop.length < TOP_LIMIT && pool.length) {
+      newTop.push(pool.shift()!);
+    }
+
+    const finalList = [...newTop, ...pool];
+    return finalList.map((s) => s.post);
+  }
+
+  return scored.map((s) => s.post);
+}
+
+export const getSponsoredPosts = async (page = 1, limit = 10) => {
+  // return active partner posts ordered Premium -> Basic, nearest expiry first
+  const now = new Date();
+  const skip = (page - 1) * limit;
+  const filter = { partnerPriority: { $gt: 0 }, partnerExpiry: { $exists: true, $gt: now }, available: true, statusApproval: true };
+
+  const [docs, total] = await Promise.all([
+    Post.find(filter)
+      .sort({ partnerPriority: -1, partnerExpiry: 1, createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate("owner", "name email")
+      .lean(),
+    Post.countDocuments(filter),
+  ]);
+
+  return {
+    content: docs,
+    pagination: {
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+    },
+  };
+}
+
+export const getNewestPosts = async (page = 1, limit = 10) => {
+  const skip = (page - 1) * limit;
+  const filter = { available: true, statusApproval: true };
+
+  const [docs, total] = await Promise.all([
+    Post.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate("owner", "name email")
+      .lean(),
+    Post.countDocuments(filter),
+  ]);
+
+  return {
+    content: docs,
+    pagination: {
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+    },
+  };
+}
 
 /**
  * Tìm bài viết gần đây dựa trên tọa độ (lat, lng) + bán kính
@@ -472,3 +669,4 @@ export const getNearbyPosts = async (lat: number, lng: number, maxDistance = 500
     },
   };
 };
+

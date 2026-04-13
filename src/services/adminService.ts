@@ -6,6 +6,7 @@ import Message from "../models/Message";
 import Note from "../models/Note";
 import Favorite from "../models/Favorite";
 import Category from "../models/Category";
+import Transaction from "../models/Transaction";
 import { generatePdfReport, generateDocxReport } from "../utils/reportUtil";
 
 type Period = { start?: Date; end?: Date };
@@ -118,5 +119,82 @@ export const AdminService = {
     ]);
 
     return agg.map((r: any) => ({ categoryId: r._id, name: r.name, count: r.count }));
+  },
+
+  /**
+    * Trả về tổng doanh thu, số giao dịch, số người mua, và breakdown theo gói (có tên gói và priority_level để tham khảo)
+   */
+  async getRevenueFromSubscriptions(params: { year: number; month?: number }) {
+    const { year, month } = params;
+    if (!Number.isInteger(year) || year < 2000 || year > 3000) throw new Error("Invalid year");
+    if (month !== undefined && (!Number.isInteger(month) || month < 1 || month > 12)) throw new Error("Invalid month");
+
+    const start = month ? new Date(year, month - 1, 1) : new Date(year, 0, 1);
+    const end = month ? new Date(year, month, 1) : new Date(year + 1, 0, 1);
+
+    const match: any = {
+      status: "paid",
+      createdAt: { $gte: start, $lt: end },
+    };
+
+    const breakdownByPackage = await Transaction.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: "$package",
+          revenue: { $sum: "$amount" },
+          transactions: { $sum: 1 },
+          uniqueBuyers: { $addToSet: "$user" },
+        },
+      },
+      {
+        $lookup: {
+          from: "packages",
+          localField: "_id",
+          foreignField: "_id",
+          as: "package",
+        },
+      },
+      { $unwind: { path: "$package", preserveNullAndEmptyArrays: true } },
+      {
+        $project: {
+          _id: 0,
+          packageId: "$_id",
+          packageName: "$package.name",
+          priority_level: "$package.priority_level",
+          revenue: 1,
+          transactions: 1,
+          buyers: { $size: "$uniqueBuyers" },
+        },
+      },
+      { $sort: { revenue: -1 } },
+    ]);
+
+    const totalsAgg = await Transaction.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: null,
+          revenue: { $sum: "$amount" },
+          transactions: { $sum: 1 },
+          uniqueBuyers: { $addToSet: "$user" },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          revenue: 1,
+          transactions: 1,
+          buyers: { $size: "$uniqueBuyers" },
+        },
+      },
+    ]);
+
+    return {
+      filter: { year, ...(month ? { month } : {}) },
+      period: { start, end: new Date(end.getTime() - 1) },
+      totals: totalsAgg[0] || { revenue: 0, transactions: 0, buyers: 0 },
+      byPackage: breakdownByPackage,
+    };
   },
 };
