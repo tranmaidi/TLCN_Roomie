@@ -15,13 +15,13 @@ router.get("/search", optionalAuthMiddleware, postController.searchPosts);
 // Tìm kiếm theo bán kính (user gửi lat, lng, maxDistance)
 router.get("/nearby", optionalAuthMiddleware, postController.getNearbyPosts);
 
-// Lấy các bài viết tài trợ
-router.get("/sponsored", optionalAuthMiddleware, postController.getSponsored);
+// Lấy các bài viết được ưu tiên theo gói (priority_level + priority_expiry)
+router.get("/priority", optionalAuthMiddleware, postController.getPriority);
 
 // Lấy các bài viết mới nhất
 router.get("/newest", optionalAuthMiddleware, postController.getNewest);
 
-// Lấy tất cả bài viết đã duyệt (public - middleware will attach user if token present)
+// Lấy tất cả bài viết cá nhân hóa (public - middleware will attach user if token present)
 router.get("/approved", optionalAuthMiddleware, postController.getApprovedPosts);
 
 // Thay đổi trạng thái bài viết (chuyển sang đã bán hoặc có sẵn)

@@ -19,6 +19,7 @@ import adminRoutes from "./routes/adminRoutes";
 import surveyRoutes from "./routes/surveyRoutes";
 import subscriptionRoutes from "./routes/subscriptionRoutes";
 import reviewRoutes from "./routes/reviewRoutes";
+import chatbotRoutes from "./routes/chatbotRoutes";
 import startSubscriptionCron from "./cron/subscriptionCron";
 
 // ====== SOCKET ======
@@ -58,6 +59,7 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/surveys", surveyRoutes);
 app.use("/api/subscriptions", subscriptionRoutes);
 app.use("/api/reviews", reviewRoutes);
+app.use("/api/chatbot", chatbotRoutes);
 
 // ====== SERVER + SOCKET ======
 const PORT = process.env.PORT || 5000;

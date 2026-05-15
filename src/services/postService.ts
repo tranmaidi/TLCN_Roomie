@@ -460,72 +460,37 @@ export const searchPosts = async (query: SearchQuery) => {
 // Apply business ranking (combine AI order with priority fields) - minimal implementation
 export function applyBusinessRanking(userId: string | undefined, posts: any[]) {
   // weights
-  const w_ai = 0.6, w_sub = 0.25, w_partner = 0.15;
+  const w_ai = 0.7, w_sub = 0.3;
   // Prefer explicit ai_score produced by aiService; if missing, fall back to position proxy
   const n = posts.length;
   const scored = posts.map((p, idx) => {
     const ai_score = typeof p.ai_score === "number" ? p.ai_score : (n - idx) / Math.max(n, 1);
-    const sub = (p.priority_level === 1) ? 0.4 : (p.priority_level === 2 ? 0.15 : 0);
-    const partner = (p.partnerPriority === 2) ? 0.5 : (p.partnerPriority === 1 ? 0.25 : 0);
-    const partnerValid = p.partnerExpiry ? new Date(p.partnerExpiry) > new Date() : true;
-    const final = w_ai * ai_score + w_sub * sub + (partnerValid ? w_partner * partner : 0);
-    return { post: p, final, isPartner: (p.partnerPriority || 0) > 0 };
+  const expiryOk = p.priority_expiry ? new Date(p.priority_expiry) > new Date() : false;
+  // priority_level mapping: 1 = Premium, 2 = Basic, 0 = normal
+  const sub = expiryOk ? (p.priority_level === 1 ? 0.4 : (p.priority_level === 2 ? 0.2 : 0)) : 0;
+    const final = w_ai * ai_score + w_sub * sub;
+    return { post: p, final };
   });
 
   scored.sort((a, b) => b.final - a.final);
 
-  // Enforce at most 2 partner posts in top 10
-  const TOP_LIMIT = 10;
-  const PARTNER_MAX = 2;
-
-  const top = scored.slice(0, TOP_LIMIT);
-  const rest = scored.slice(TOP_LIMIT);
-
-  const partnersInTop = top.filter((s) => s.isPartner);
-  if (partnersInTop.length > PARTNER_MAX) {
-    // Keep the first PARTNER_MAX partners (highest final), demote others into the rest preserving order
-    const kept: any[] = [];
-    const demoted: any[] = [];
-    let partnerKept = 0;
-    for (const item of top) {
-      if (item.isPartner) {
-        if (partnerKept < PARTNER_MAX) {
-          kept.push(item);
-          partnerKept++;
-        } else {
-          demoted.push(item);
-        }
-      } else {
-        kept.push(item);
-      }
-    }
-
-    // New top is kept (non-partners + allowed partners), then fill with best of rest (non-partners first)
-    const newTop = [...kept];
-
-    // from rest + demoted, pick items to fill to TOP_LIMIT by final score (demoted should re-enter candidate pool)
-    const pool = [...rest, ...demoted];
-    pool.sort((a, b) => b.final - a.final);
-    while (newTop.length < TOP_LIMIT && pool.length) {
-      newTop.push(pool.shift()!);
-    }
-
-    const finalList = [...newTop, ...pool];
-    return finalList.map((s) => s.post);
-  }
-
   return scored.map((s) => s.post);
 }
 
-export const getSponsoredPosts = async (page = 1, limit = 10) => {
-  // return active partner posts ordered Premium -> Basic, nearest expiry first
+export const getPriorityPosts = async (page = 1, limit = 10) => {
+  // return active priority posts (subscription) ordered high->low, nearest expiry first
   const now = new Date();
   const skip = (page - 1) * limit;
-  const filter = { partnerPriority: { $gt: 0 }, partnerExpiry: { $exists: true, $gt: now }, available: true, statusApproval: true };
+  const filter = {
+    priority_level: { $gt: 0 },
+    priority_expiry: { $exists: true, $gt: now },
+    available: true,
+    statusApproval: true,
+  };
 
   const [docs, total] = await Promise.all([
     Post.find(filter)
-      .sort({ partnerPriority: -1, partnerExpiry: 1, createdAt: -1 })
+      .sort({ priority_level: -1, priority_expiry: 1, createdAt: -1 })
       .skip(skip)
       .limit(limit)
       .populate("owner", "name email")

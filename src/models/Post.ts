@@ -25,8 +25,6 @@ export interface IPost extends Document {
   updatedAt?: Date;
   priority_level?: number;
   priority_expiry?: Date;
-  partnerPriority?: number;
-  partnerExpiry?: Date;
 }
 
 const postSchema = new Schema<IPost>(
@@ -60,8 +58,6 @@ const postSchema = new Schema<IPost>(
   // Priority fields (subscription + partner)
   priority_level: { type: Number, default: 0 },
   priority_expiry: { type: Date },
-  partnerPriority: { type: Number, default: 0 }, // 0 none, 1 partner, 2 featured
-  partnerExpiry: { type: Date },
   },
   { timestamps: true }
 );

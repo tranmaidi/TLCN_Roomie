@@ -283,13 +283,12 @@ export const getNearbyPosts = async (req: Request, res: Response) => {
   }
 };
 
-
-export const getSponsored = async (req: Request, res: Response) => {
+export const getPriority = async (req: Request, res: Response) => {
   try {
-  const page = parseInt(req.query.page as string) || 1;
-  const limit = parseInt(req.query.limit as string) || 10;
-  const result = await postService.getSponsoredPosts(page, limit);
-  return res.json({ success: true, ...result });
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const result = await postService.getPriorityPosts(page, limit);
+    return res.json({ success: true, ...result });
   } catch (err: any) {
     return res.status(500).json({ message: err.message });
   }
