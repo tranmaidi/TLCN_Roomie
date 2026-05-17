@@ -39,7 +39,7 @@ const postSchema = new Schema<IPost>(
     superficies: { type: Number },
     images: { type: [String], default: [] },
     available: { type: Boolean, default: true },
-    statusApproval: { type: Boolean, default: false },
+    statusApproval: { type: Boolean, default: true },
     category: { type: Schema.Types.ObjectId, ref: "Category", required: true },
     owner: { type: Schema.Types.ObjectId, ref: "User", required: true },
     searchNormalized: { type: String, index: true, select: false },
@@ -67,6 +67,27 @@ postSchema.index({ location: "2dsphere" });
 
 // Index hỗ trợ tìm nhanh theo vùng và giá
 postSchema.index({ city: 1, district: 1, price: 1 });
+
+// Text index for semantic-ish search layer (MongoDB native text search)
+// Note: weights are tuned for room finding queries.
+postSchema.index(
+  {
+    title: "text",
+    description: "text",
+    address: "text",
+    searchNormalized: "text",
+  },
+  {
+    name: "post_text_search",
+    weights: {
+      title: 10,
+      description: 5,
+      address: 4,
+      searchNormalized: 3,
+    },
+    default_language: "none",
+  }
+);
 
 // Middleware: tự động tạo bản không dấu để hỗ trợ tìm kiếm tiếng Việt không dấu
 postSchema.pre("save", function (next) {

@@ -29,10 +29,8 @@ function getGeminiApiKey(): string {
 }
 
 function getGeminiModel(): string {
-  // NOTE:
-  // - Một số project/key có thể không hỗ trợ model mới trên endpoint v1beta:generateContent.
-  // - Vì vậy ưu tiên dùng env GEMINI_MODEL, và fallback sang model ổn định hơn.
-  return process.env.GEMINI_MODEL || "gemini-1.5-flash";
+  // Ưu tiên dùng env GEMINI_MODEL, và fallback sang model ổn định hơn.
+  return process.env.GEMINI_MODEL || "gemini-2.5-flash";
 }
 
 function isModelNotFoundError(err: any): boolean {
@@ -42,10 +40,7 @@ function isModelNotFoundError(err: any): boolean {
 }
 
 const MODEL_FALLBACKS = [
-  // Try a more compatible model when flash is not available.
-  // (These names may vary by API/key; we only try on 404-model-not-found to avoid masking real issues.)
-  "gemini-1.5-pro",
-  "gemini-1.0-pro",
+  "gemini-2.5-flash-lite",
 ];
 
 export async function geminiGenerateText(payload: GeminiGenerateRequest): Promise<string> {

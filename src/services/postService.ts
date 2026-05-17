@@ -57,24 +57,6 @@ export const createPost = async (data: Partial<IPost>, io?: any) => {
     const post = new Post(postData);
     const savedPost = await post.save();
 
-    // --- Gửi thông báo đến tất cả admin ---
-    const admins = await User.find({ role: "admin" });
-    const notificationPromises = admins.map(admin =>
-        NotificationService.createNotification({
-            user: admin._id.toString(),
-            type: "postApproval",
-            content: `Có bài viết mới: "${savedPost.title}" cần duyệt`,
-            post: savedPost._id.toString(),
-        }).then(notification => {
-            // Nếu có io, emit realtime
-            if (io) {
-                io.to(admin._id.toString()).emit("newNotification", notification);
-            }
-        })
-    );
-
-    await Promise.all(notificationPromises);
-
     return savedPost;
   } catch (error) {
     console.error('[postService.createPost] Error', error);

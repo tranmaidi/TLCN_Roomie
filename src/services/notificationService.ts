@@ -26,6 +26,25 @@ export class NotificationService {
         return notification;
     }
 
+    // Tạo notification + emit realtime (re-use pattern ở postService)
+    static async createAndEmit(
+        params: {
+            user: string;
+            sender?: string;
+            type: "message" | "system" | "review" | "booking" | "postApproval";
+            content: string;
+            post?: string;
+        },
+        io?: any,
+        eventName: string = "newNotification"
+    ) {
+        const notification = await NotificationService.createNotification(params);
+        if (io) {
+            io.to(params.user).emit(eventName, notification);
+        }
+        return notification;
+    }
+
     // Lấy danh sách thông báo của 1 user
     static async getNotifications(userId: string) {
         return Notification.find({ user: userId })
