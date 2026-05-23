@@ -1,7 +1,6 @@
 import Post, { IPost } from "../models/Post";
 import { removeVietnameseTones } from "../utils/normalizeText";
 import mongoose from "mongoose";
-import User from "../models/User";
 import { NotificationService } from "./notificationService";
 import { getLatLngFromAddress, formatAddress } from "../utils/geocoding";
 import Subscription from "../models/Subscription";
@@ -270,29 +269,29 @@ export const getAllPostsAdmin = async (page = 1, limit = 10) => {
 
 
 // Duyệt bài viết (chỉ admin)
-export const approvePost = async (postId: string) => {
-    // Kiểm tra ID có hợp lệ không
-    if (!mongoose.Types.ObjectId.isValid(postId)) {
-        throw new Error("ID bài viết không hợp lệ");
-    }
+// export const approvePost = async (postId: string) => {
+//     // Kiểm tra ID có hợp lệ không
+//     if (!mongoose.Types.ObjectId.isValid(postId)) {
+//         throw new Error("ID bài viết không hợp lệ");
+//     }
 
-    // Tìm bài viết theo ID
-    const post = await Post.findById(postId);
-    if (!post) {
-        throw new Error("Không tìm thấy bài viết");
-    }
+//     // Tìm bài viết theo ID
+//     const post = await Post.findById(postId);
+//     if (!post) {
+//         throw new Error("Không tìm thấy bài viết");
+//     }
 
-    // Nếu bài viết đã được duyệt rồi thì thông báo
-    if (post.statusApproval === true) {
-        throw new Error("Bài viết này đã được duyệt trước đó");
-    }
+//     // Nếu bài viết đã được duyệt rồi thì thông báo
+//     if (post.statusApproval === true) {
+//         throw new Error("Bài viết này đã được duyệt trước đó");
+//     }
 
-    // Duyệt bài viết
-    post.statusApproval = true;
-    await post.save();
+//     // Duyệt bài viết
+//     post.statusApproval = true;
+//     await post.save();
 
-    return post;
-};
+//     return post;
+// };
 
 // Lấy tất cả bài viết đã duyệt
 export const getApprovedPosts = async (page = 1, limit = 10, userId?: string) => {
@@ -411,6 +410,9 @@ export const searchPosts = async (query: SearchQuery) => {
 
         filters.$or = [
             { title: regex },
+            { city: regex },
+            { district: regex },
+            { ward: regex },
             { description: regex },
             { address: regex },
             { searchNormalized: regex },

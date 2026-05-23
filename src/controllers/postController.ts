@@ -160,15 +160,15 @@ export const getAllPostsAdmin = async (req: Request, res: Response) => {
     }
 };
 
-export const approvePost = async (req: Request, res: Response) => {
-    try {
-        const postId = req.params.id;
-        const post = await postService.approvePost(postId);
-        res.status(200).json({ message: "Bài viết đã được duyệt", post });
-    } catch (error: any) {
-        res.status(400).json({ message: error.message });
-    }
-};
+// export const approvePost = async (req: Request, res: Response) => {
+//     try {
+//         const postId = req.params.id;
+//         const post = await postService.approvePost(postId);
+//         res.status(200).json({ message: "Bài viết đã được duyệt", post });
+//     } catch (error: any) {
+//         res.status(400).json({ message: error.message });
+//     }
+// };
 
 export const getApprovedPosts = async (req: Request, res: Response) => {
   try {

@@ -40,7 +40,7 @@ function isModelNotFoundError(err: any): boolean {
 }
 
 const MODEL_FALLBACKS = [
-  "gemini-2.5-flash-lite",
+  "gemini-2.5-flash",
 ];
 
 export async function geminiGenerateText(payload: GeminiGenerateRequest): Promise<string> {

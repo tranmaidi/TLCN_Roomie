@@ -165,7 +165,7 @@ export async function chatWithGemini(input: ChatbotRequest): Promise<{ reply: st
     reply = await geminiGenerateText({
       systemInstruction: { parts: [{ text: system }] },
       contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 1000 },
+      generationConfig: { temperature: 0.1, maxOutputTokens: 1200 },
     });
   }
 

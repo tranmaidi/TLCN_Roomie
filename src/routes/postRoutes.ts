@@ -40,7 +40,7 @@ router.get("/me/sold", authMiddleware, postController.getMySoldPosts);
 router.get("/admin/all", authMiddleware, requireAdmin, postController.getAllPostsAdmin);
 
 // Duyệt bài viết (Admin)
-router.put("/approve/:id", authMiddleware, requireAdmin, postController.approvePost);
+//router.put("/approve/:id", authMiddleware, requireAdmin, postController.approvePost);
 
 // Lấy tất cả bài viết đã duyệt của một người dùng
 router.get("/approved/user/:userId", postController.getApprovedPostsByUser);

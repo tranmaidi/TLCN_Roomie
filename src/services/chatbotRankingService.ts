@@ -12,13 +12,13 @@ export type ChatbotRankingResult = {
   ranked: RankedRoom[];
 };
 
-// const RANK_DEBUG = (process.env.CHATBOT_RANK_DEBUG || "").toString().toLowerCase() === "true";
+const RANK_DEBUG = (process.env.CHATBOT_RANK_DEBUG || "").toString().toLowerCase() === "true";
 
-// function dlog(...args: any[]) {
-//   if (!RANK_DEBUG) return;
-//   // eslint-disable-next-line no-console
-//   console.log("[chatbotRanking]", ...args);
-// }
+function dlog(...args: any[]) {
+  if (!RANK_DEBUG) return;
+  // eslint-disable-next-line no-console
+  console.log("[chatbotRanking]", ...args);
+}
 
 function safeString(v: any): string {
   if (v === null || v === undefined) return "";
@@ -42,43 +42,22 @@ function buildRankingSystemInstruction(): string {
     "Bạn KHÔNG ĐƯỢC tạo/phỏng đoán dữ liệu phòng (giá/địa chỉ/diện tích/tiện ích).",
     "Nếu dữ liệu không đủ để kết luận, hãy nói rõ và hỏi lại 1-2 câu ngắn.",
     "",
-    "Output yêu cầu: trả về JSON hợp lệ theo schema.",
-    "Schema:",
+    "Bạn PHẢI trả về JSON hợp lệ (không markdown, không code-fence).",
+    "Schema JSON:",
     "{",
-    '  "reply": string,',
+    '  "reply": "<plain text>",',
     '  "ranked": [',
-    "     {",
-    '       "id": string,',
-    '       "reason": string',
-    "{",
-    '  "reply": "...",',
-    '  "ranked": [',
-    '    { "id": "<mongo_object_id>", "reason": "..." }',
+    '    { "id": "<mongo_object_id>", "reason": "<1 câu, dựa vào dữ liệu>" }',
     "  ]",
     "}",
-    "- reason ngắn gọn (<= 1 câu) và phải dựa vào field thật: price, address/city/district, superficies, description.",
-    "- reply ngắn gọn, tự nhiên, hữu ích.",
-    "- Nếu user muốn tìm phòng, hãy chọn tối đa 3 phòng phù hợp nhất.",
+    "- reply: plain text tiếng Việt, ngắn gọn, không bắt đầu bằng từ 'json'.",
+    "- ranked: chọn tối đa 3 phòng phù hợp nhất trong ROOMS, KHÔNG chọn id ngoài danh sách.",
+    "- reason: <= 1 câu và phải dựa vào field thật: price, address/city/district, superficies, description.",
   ].join("\n");
 }
 
-function buildRoomsBlock(posts: IPost[]): string {
-  const lines = posts.slice(0, 12).map((p, idx) => {
-    const desc = safeString((p as any).description).replace(/\s+/g, " ").slice(0, 220);
-    return [
-      `${idx + 1}. id:${(p as any)._id}`,
-      `title:${safeString((p as any).title)}`,
-      `price:${formatMoneyVND(Number((p as any).price))}`,
-      `city:${safeString((p as any).city)}`,
-      `district:${safeString((p as any).district)}`,
-      `address:${safeString((p as any).address)}`,
-      `superficies:${safeString((p as any).superficies)}`,
-      `available:${safeString((p as any).available)}`,
-      `desc:${desc}`,
-    ].join(" | ");
-  });
-
-  return ["ROOMS:", ...lines].join("\n");
+function stripCodeFences(text: string): string {
+  return (text || "").replace(/```[a-zA-Z]*\s*/g, "").replace(/```/g, "").trim();
 }
 
 function safeJsonParse<T>(text: string): T | null {
@@ -90,6 +69,36 @@ function safeJsonParse<T>(text: string): T | null {
   } catch {
     return null;
   }
+}
+
+function extractReplyFromJsonish(raw: string): string {
+  const cleaned = stripCodeFences(raw);
+  const parsed = safeJsonParse<any>(cleaned);
+  if (typeof parsed?.reply === "string" && parsed.reply.trim()) return parsed.reply.trim();
+
+  const m = cleaned.match(/"reply"\s*:\s*"([\s\S]*?)"\s*(,|\}|\n)/i);
+  if (m?.[1]) return m[1].replace(/\\n/g, "\n").trim();
+
+  return cleaned.trim();
+}
+
+function buildRoomsBlock(posts: IPost[]): string {
+  const lines = posts.slice(0, 12).map((p: any, idx) => {
+    const desc = safeString(p?.description).replace(/\s+/g, " ").slice(0, 220);
+    return [
+      `${idx + 1}. id:${p?._id}`,
+      `title:${safeString(p?.title)}`,
+      `price:${formatMoneyVND(Number(p?.price))}`,
+      `city:${safeString(p?.city)}`,
+      `district:${safeString(p?.district)}`,
+      `address:${safeString(p?.address)}`,
+      `superficies:${safeString(p?.superficies)}`,
+      `available:${safeString(p?.available)}`,
+      `desc:${desc}`,
+    ].join(" | ");
+  });
+
+  return ["ROOMS:", ...lines].join("\n");
 }
 
 export async function rankAndReasonRooms(params: {
@@ -119,11 +128,12 @@ export async function rankAndReasonRooms(params: {
   const raw = await geminiGenerateText({
     systemInstruction: { parts: [{ text: buildRankingSystemInstruction() }] },
     contents: [{ role: "user", parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.2, maxOutputTokens: 800 },
+    generationConfig: { temperature: 0.2, maxOutputTokens: 1200 },
   });
 
-  const parsed = safeJsonParse<any>(raw || "");
-  const reply = typeof parsed?.reply === "string" && parsed.reply.trim() ? parsed.reply.trim() : (raw || "").trim();
+  const cleanedRaw = stripCodeFences(raw || "");
+  const parsed = safeJsonParse<any>(cleanedRaw);
+  const reply = extractReplyFromJsonish(cleanedRaw);
 
   const allowedIds = new Set(candidates.map((p: any) => p._id?.toString?.()).filter(Boolean));
   const rankedRaw: any[] = Array.isArray(parsed?.ranked) ? parsed.ranked : [];
@@ -138,6 +148,12 @@ export async function rankAndReasonRooms(params: {
     })
     .filter(Boolean)
     .slice(0, 3) as RankedRoom[];
+
+  dlog("Model raw:", raw);
+  dlog(
+    "Ranked ids:",
+    ranked.map((r: any) => ({ id: r.post?._id?.toString?.() || String(r.post?._id), reason: r.reason }))
+  );
 
 //   // Debug: print ranking score low -> high (based on AI order)
 //   // score = (n - idx) / n, where idx is AI rank index (0 = best)
