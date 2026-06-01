@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import Survey from "../models/Survey";
 import SurveyTemplate from "../models/SurveyTemplate";
-import { recordInteraction } from "../services/aiService";
+import { recordInteraction } from "../services/rankingService";
 
 export const submitSurvey = async (req: Request & { user?: any }, res: Response) => {
   try {

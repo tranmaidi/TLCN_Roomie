@@ -68,8 +68,6 @@ postSchema.index({ location: "2dsphere" });
 // Index hỗ trợ tìm nhanh theo vùng và giá
 postSchema.index({ city: 1, district: 1, price: 1 });
 
-// Text index for semantic-ish search layer (MongoDB native text search)
-// Note: weights are tuned for room finding queries.
 postSchema.index(
   {
     title: "text",

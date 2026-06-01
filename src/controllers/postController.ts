@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import * as postService from "../services/postService";
-import { rerankPostsByUser, recordInteraction, getLatestSearchQuery } from "../services/aiService";
+import { rerankPostsByUser, recordInteraction, getLatestSearchQuery } from "../services/rankingService";
 import { applyBusinessRanking } from "../services/postService";
 
 export const createPost = async (req: Request & { user?: any }, res: Response) => {
@@ -216,6 +216,7 @@ export const getApprovedPostsByUser = async (req: Request, res: Response) => {
 
 export const searchPosts = async (req: Request, res: Response) => {
     try {
+    const userId = (req as any).user?.id;
         const query = {
             city: req.query.city?.toString(),
             district: req.query.district?.toString(),
@@ -226,11 +227,10 @@ export const searchPosts = async (req: Request, res: Response) => {
             keyword: req.query.keyword?.toString(),
             page: req.query.page ? Number(req.query.page) : 1,
             limit: req.query.limit ? Number(req.query.limit) : 10,
+      userId,
         };
 
         const result = await postService.searchPosts(query);
-
-        const userId = (req as any).user?.id;
         const keyword = (req.query.keyword as string) || "";
 
         // record/search + rerank only for authenticated users (non-blocking)
@@ -287,7 +287,8 @@ export const getPriority = async (req: Request, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 10;
-    const result = await postService.getPriorityPosts(page, limit);
+  const userId = (req as any).user?.id;
+  const result = await postService.getPriorityPosts(page, limit, userId);
     return res.json({ success: true, ...result });
   } catch (err: any) {
     return res.status(500).json({ message: err.message });
@@ -298,7 +299,8 @@ export const getNewest = async (req: Request, res: Response) => {
   try {
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 10;
-  const result = await postService.getNewestPosts(page, limit);
+  const userId = (req as any).user?.id;
+  const result = await postService.getNewestPosts(page, limit, userId);
   return res.json({ success: true, ...result });
   } catch (err: any) {
     return res.status(500).json({ message: err.message });

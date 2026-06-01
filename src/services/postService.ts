@@ -368,6 +368,7 @@ interface SearchQuery {
     keyword?: string;
     page?: number;
     limit?: number;
+    userId?: string;
 }
 
 export const searchPosts = async (query: SearchQuery) => {
@@ -381,11 +382,17 @@ export const searchPosts = async (query: SearchQuery) => {
         keyword,
         page = 1,
         limit = 10,
+    userId,
     } = query;
 
     const filters: any = {
         statusApproval: true, // chỉ lấy bài đã duyệt
     };
+
+    // Nếu user đã đăng nhập: loại bài của chính họ khỏi kết quả public
+    if (userId && mongoose.Types.ObjectId.isValid(userId)) {
+      filters.owner = { $ne: new mongoose.Types.ObjectId(userId) };
+    }
 
     if (city) filters.city = city;
     if (district) filters.district = district;
@@ -441,18 +448,20 @@ export const searchPosts = async (query: SearchQuery) => {
     };
 };
 
-// Apply business ranking (combine AI order with priority fields) - minimal implementation
 export function applyBusinessRanking(userId: string | undefined, posts: any[]) {
   // weights
-  const w_ai = 0.7, w_sub = 0.3;
-  // Prefer explicit ai_score produced by aiService; if missing, fall back to position proxy
-  const n = posts.length;
-  const scored = posts.map((p, idx) => {
-    const ai_score = typeof p.ai_score === "number" ? p.ai_score : (n - idx) / Math.max(n, 1);
+  const w_ai = 0.9, w_sub = 0.1;
+  // ai_score bây giờ là "điểm thực" => chuẩn hoá về [0,1] trước khi trộn với subscription score
+  const rawScores = (posts || []).map((p: any) => (typeof p?.ai_score === "number" ? p.ai_score : 0));
+  const maxAiScore = Math.max(1, ...rawScores);
+
+  const scored = posts.map((p) => {
+    const aiRaw = typeof p.ai_score === "number" ? p.ai_score : 0;
+    const normalizedAiScore = Math.max(0, aiRaw) / maxAiScore;
   const expiryOk = p.priority_expiry ? new Date(p.priority_expiry) > new Date() : false;
   // priority_level mapping: 1 = Premium, 2 = Basic, 0 = normal
   const sub = expiryOk ? (p.priority_level === 1 ? 0.4 : (p.priority_level === 2 ? 0.2 : 0)) : 0;
-    const final = w_ai * ai_score + w_sub * sub;
+    const final = w_ai * normalizedAiScore + w_sub * sub;
     return { post: p, final };
   });
 
@@ -461,16 +470,21 @@ export function applyBusinessRanking(userId: string | undefined, posts: any[]) {
   return scored.map((s) => s.post);
 }
 
-export const getPriorityPosts = async (page = 1, limit = 10) => {
+export const getPriorityPosts = async (page = 1, limit = 10, userId?: string) => {
   // return active priority posts (subscription) ordered high->low, nearest expiry first
   const now = new Date();
   const skip = (page - 1) * limit;
-  const filter = {
+  const filter: any = {
     priority_level: { $gt: 0 },
     priority_expiry: { $exists: true, $gt: now },
     available: true,
     statusApproval: true,
   };
+
+  // (optional) loại bài của chính user
+  if (userId && mongoose.Types.ObjectId.isValid(userId)) {
+    filter.owner = { $ne: new mongoose.Types.ObjectId(userId) };
+  }
 
   const [docs, total] = await Promise.all([
     Post.find(filter)
@@ -492,9 +506,14 @@ export const getPriorityPosts = async (page = 1, limit = 10) => {
   };
 }
 
-export const getNewestPosts = async (page = 1, limit = 10) => {
+export const getNewestPosts = async (page = 1, limit = 10, userId?: string) => {
   const skip = (page - 1) * limit;
-  const filter = { available: true, statusApproval: true };
+  const filter: any = { available: true, statusApproval: true };
+
+  // Nếu user đã đăng nhập: loại bài của chính họ
+  if (userId && mongoose.Types.ObjectId.isValid(userId)) {
+    filter.owner = { $ne: new mongoose.Types.ObjectId(userId) };
+  }
 
   const [docs, total] = await Promise.all([
     Post.find(filter)
@@ -539,7 +558,7 @@ export const getNearbyPosts = async (lat: number, lng: number, maxDistance = 500
           spherical: true,
           query: { 
             statusApproval: true,
-            ...(ownerFilter ? { owner: { $ne: ownerFilter } } : {}), // ⭐ Loại bỏ bài của user
+            ...(ownerFilter ? { owner: { $ne: ownerFilter } } : {}),
           },
         },
       },

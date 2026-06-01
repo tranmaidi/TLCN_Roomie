@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import mongoose from "mongoose";
 import * as favoriteService from "../services/favoriteService";
+import { recordInteraction } from "../services/rankingService";
 
 export const addFavorite = async (req: Request & { user?: any }, res: Response) => {
     try {
@@ -13,6 +14,11 @@ export const addFavorite = async (req: Request & { user?: any }, res: Response) 
             new mongoose.Types.ObjectId(userId),
             new mongoose.Types.ObjectId(postId)
         );
+
+        // non-blocking log for personalization
+        recordInteraction(userId, "favorite", { postId, meta: { action: "add" } }).catch((e) => {
+            console.error("[favoriteController] recordInteraction failed", e);
+        });
 
         res.status(201).json({ message: "Đã thêm vào yêu thích", data: result });
     } catch (error: any) {
@@ -29,6 +35,11 @@ export const removeFavorite = async (req: Request & { user?: any }, res: Respons
             new mongoose.Types.ObjectId(userId),
             new mongoose.Types.ObjectId(postId)
         );
+
+        // non-blocking log for personalization
+        recordInteraction(userId, "favorite", { postId, meta: { action: "remove" } }).catch((e) => {
+            console.error("[favoriteController] recordInteraction failed", e);
+        });
 
         res.json({ message: "Đã xóa khỏi yêu thích" });
     } catch (error: any) {
