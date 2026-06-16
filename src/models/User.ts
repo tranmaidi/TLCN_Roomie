@@ -12,15 +12,14 @@ export interface IUser extends Document {
   role: "guest" | "user" | "admin";
   isVerified: boolean;
   isOnline: boolean;
+  isPostActivated?: boolean;
   lastActiveAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
   introduce?: string;
-
-  // mới: trạng thái bị khóa
   isLocked?: boolean;
-
-  // mới: đã từng đăng nhập (dùng để quyết định show survey lần đầu)
+  isDeleted?: boolean;
+  //đã từng đăng nhập (dùng để quyết định show survey lần đầu)
   hasLoggedIn?: boolean;
 
   // methods
@@ -86,6 +85,10 @@ const userSchema = new Schema<IUser>(
       type: Boolean,
       default: false,
     },
+    isPostActivated: {
+      type: Boolean,
+      default: false,
+    },
     lastActiveAt: {
       type: Date,
     },
@@ -100,6 +103,12 @@ const userSchema = new Schema<IUser>(
       type: Boolean,
       default: false,
     },
+
+    isDeleted: {
+      type: Boolean,
+      default: false,
+    },
+    
     // đánh dấu đã đăng nhập lần đầu hay chưa (mặc định false)
     hasLoggedIn: {
       type: Boolean,

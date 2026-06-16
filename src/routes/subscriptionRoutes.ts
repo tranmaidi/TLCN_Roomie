@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { createTransaction, confirmPayment, adminCreatePackage, adminUpdatePackage, adminDeletePackage, listPackages, createZaloOrder, createZaloUpgradeOrder, zaloCallback, createZaloQuery, upgradeToPremium, getMySubscriptionHistory } from "../controllers/subscriptionController";
+import { createTransaction, confirmPayment, adminCreatePackage, adminUpdatePackage, adminDeletePackage, listPackages, createZaloOrder, createZaloUpgradeOrder, createZaloPostActivationOrder, zaloCallback, createZaloQuery, upgradeToPremium, getMySubscriptionHistory, getMyPaymentHistory } from "../controllers/subscriptionController";
 import { authMiddleware, requireAdmin } from "../middlewares/authMiddleware";
 
 const router = Router();
@@ -10,11 +10,13 @@ router.post("/confirm", confirmPayment);
 // ZaloPay endpoints (create order, callback, query)
 router.post("/zalo/create", authMiddleware, createZaloOrder);
 router.post("/zalo/upgrade", authMiddleware, createZaloUpgradeOrder);
+router.post("/zalo/post-activation", authMiddleware, createZaloPostActivationOrder);
 router.post("/zalo/callback", zaloCallback);
 router.post("/zalo/query", authMiddleware, createZaloQuery);
 
 // Subscription history
 router.get("/history", authMiddleware, getMySubscriptionHistory);
+router.get("/payment-history", authMiddleware, getMyPaymentHistory);
 
 // Upgrade subscription: basic -> premium (carry over remaining time)
 //router.post("/upgrade-to-premium", authMiddleware, upgradeToPremium);

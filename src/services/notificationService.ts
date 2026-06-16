@@ -1,5 +1,6 @@
 import Notification from "../models/Notification";
 import mongoose from "mongoose";
+import User from "../models/User";
 
 export class NotificationService {
     // Tạo thông báo mới
@@ -43,6 +44,33 @@ export class NotificationService {
             io.to(params.user).emit(eventName, notification);
         }
         return notification;
+    }
+
+    // Tạo thông báo hệ thống cho tất cả user đang hoạt động
+    static async notifyAllUsers(content: string, sender?: string) {
+        const users = await User.find({ isDeleted: false }).select("_id").lean();
+        if (!users.length) return { insertedCount: 0 };
+
+        const chunks: Array<Array<{ user: mongoose.Types.ObjectId; sender?: mongoose.Types.ObjectId; type: "system"; content: string }>> = [];
+        const chunkSize = 500;
+
+        for (let i = 0; i < users.length; i += chunkSize) {
+            const slice = users.slice(i, i + chunkSize).map((u: any) => ({
+                user: u._id,
+                sender: sender && mongoose.Types.ObjectId.isValid(sender) ? new mongoose.Types.ObjectId(sender) : undefined,
+                type: "system" as const,
+                content,
+            }));
+            chunks.push(slice);
+        }
+
+        let insertedCount = 0;
+        for (const chunk of chunks) {
+            const docs = await Notification.insertMany(chunk, { ordered: false });
+            insertedCount += docs.length;
+        }
+
+        return { insertedCount };
     }
 
     // Lấy danh sách thông báo của 1 user

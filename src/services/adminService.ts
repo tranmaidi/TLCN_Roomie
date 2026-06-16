@@ -7,6 +7,7 @@ import Note from "../models/Note";
 import Favorite from "../models/Favorite";
 import Category from "../models/Category";
 import Transaction from "../models/Transaction";
+import PaymentHistory from "../models/PaymentHistory";
 import { generatePdfReport, generateDocxReport } from "../utils/reportUtil";
 
 type Period = { start?: Date; end?: Date };
@@ -170,30 +171,81 @@ export const AdminService = {
       { $sort: { revenue: -1 } },
     ]);
 
-    const totalsAgg = await Transaction.aggregate([
-      { $match: match },
-      {
-        $group: {
-          _id: null,
-          revenue: { $sum: "$amount" },
-          transactions: { $sum: 1 },
-          uniqueBuyers: { $addToSet: "$user" },
+    const postActivationMatch: any = {
+      type: "post_activation",
+      status: "success",
+    };
+
+    const [subscriptionAgg, postActivationAgg] = await Promise.all([
+      Transaction.aggregate([
+        { $match: match },
+        {
+          $group: {
+            _id: null,
+            revenue: { $sum: "$amount" },
+            transactions: { $sum: 1 },
+            uniqueBuyers: { $addToSet: "$user" },
+          },
         },
-      },
-      {
-        $project: {
-          _id: 0,
-          revenue: 1,
-          transactions: 1,
-          buyers: { $size: "$uniqueBuyers" },
+        {
+          $project: {
+            _id: 0,
+            revenue: 1,
+            transactions: 1,
+            uniqueBuyers: 1,
+            buyers: { $size: "$uniqueBuyers" },
+          },
         },
-      },
+      ]),
+      PaymentHistory.aggregate([
+        { $match: postActivationMatch },
+        {
+          $addFields: {
+            effectiveDate: { $ifNull: ["$paidAt", "$createdAt"] },
+          },
+        },
+        {
+          $match: {
+            effectiveDate: { $gte: start, $lt: end },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            revenue: { $sum: "$amount" },
+            transactions: { $sum: 1 },
+            uniqueBuyers: { $addToSet: "$userId" },
+          },
+        },
+        {
+          $project: {
+            _id: 0,
+            revenue: 1,
+            transactions: 1,
+            uniqueBuyers: 1,
+            buyers: { $size: "$uniqueBuyers" },
+          },
+        },
+      ]),
+    ]);
+
+    const subscriptionTotals = subscriptionAgg[0] || { revenue: 0, transactions: 0, buyers: 0, uniqueBuyers: [] };
+    const postActivationTotals = postActivationAgg[0] || { revenue: 0, transactions: 0, buyers: 0, uniqueBuyers: [] };
+    const combinedBuyers = new Set([
+      ...(subscriptionTotals.uniqueBuyers || []),
+      ...(postActivationTotals.uniqueBuyers || []),
     ]);
 
     return {
       filter: { year, ...(month ? { month } : {}) },
       period: { start, end: new Date(end.getTime() - 1) },
-      totals: totalsAgg[0] || { revenue: 0, transactions: 0, buyers: 0 },
+      totals: {
+        revenue: subscriptionTotals.revenue + postActivationTotals.revenue,
+        transactions: subscriptionTotals.transactions + postActivationTotals.transactions,
+        buyers: combinedBuyers.size,
+      },
+      subscription: subscriptionTotals,
+      postActivation: postActivationTotals,
       byPackage: breakdownByPackage,
     };
   },

@@ -27,7 +27,11 @@ export const createPost = async (req: Request & { user?: any }, res: Response) =
 
         res.status(201).json({ message: "Tạo bài viết thành công", data: newPost });
     } catch (err: any) {
-        res.status(400).json({ message: err.message });
+        const message = err?.message || "Lỗi server!";
+        if (message.includes("kích hoạt quyền đăng tin")) {
+            return res.status(403).json({ message });
+        }
+        res.status(400).json({ message });
     }
 };
 

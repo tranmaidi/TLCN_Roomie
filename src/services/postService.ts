@@ -5,10 +5,38 @@ import { NotificationService } from "./notificationService";
 import { getLatLngFromAddress, formatAddress } from "../utils/geocoding";
 import Subscription from "../models/Subscription";
 import Package from "../models/Package";
+import User from "../models/User";
+import Category from "../models/Category";
 
 // Tạo bài viết mới
 export const createPost = async (data: Partial<IPost>, io?: any) => {
   try {
+    const ownerId = data.owner;
+    if (!ownerId) {
+      throw new Error("Thiếu thông tin người đăng bài");
+    }
+
+    const activeOwner = await User.findOne({ _id: ownerId, isDeleted: false });
+    if (!activeOwner) {
+      throw new Error("Tài khoản không tồn tại hoặc đã bị xóa");
+    }
+
+    if (!activeOwner.isPostActivated) {
+      throw new Error("Bạn cần kích hoạt quyền đăng tin trước khi tạo bài viết");
+    }
+
+    if (!data.category) {
+      throw new Error("Thiếu thông tin danh mục");
+    }
+
+    const activeCategory = await Category.findOne({
+      _id: data.category,
+      isDeleted: false,
+    });
+    if (!activeCategory) {
+      throw new Error("Danh mục không tồn tại hoặc đã bị xóa");
+    }
+
     // Lấy tọa độ từ địa chỉ nếu có đủ thông tin
     let location: any = undefined;
     if (data.address) {
@@ -32,7 +60,6 @@ export const createPost = async (data: Partial<IPost>, io?: any) => {
     const postData: any = { ...data };
     // Nếu owner có subscription active thì áp priority tương ứng
     try {
-      const ownerId = data.owner;
       if (ownerId) {
         const now = new Date();
         const activeSub = await Subscription.findOne({ user: ownerId, status: 'active', expiryAt: { $gt: now } }).populate('package');
@@ -68,11 +95,16 @@ export const deletePost = async (id: string, userId: string, isAdmin: boolean, i
     const post = await Post.findById(id);
     if (!post) throw new Error("Không tìm thấy bài viết");
 
+    if (post.isDeleted) {
+        throw new Error("Bài viết đã bị xóa");
+    }
+
     if (!isAdmin && post.owner.toString() !== userId) {
         throw new Error("Bạn không có quyền xóa bài viết này");
     }
 
-    await Post.findByIdAndDelete(id);
+    post.isDeleted = true;
+    await post.save();
 
     // --- Gửi thông báo tới chủ bài viết ---
     if (isAdmin) {
@@ -101,10 +133,24 @@ export const updatePost = async (
     const post = await Post.findById(id);
     if (!post) throw new Error("Không tìm thấy bài viết");
 
+    if (post.isDeleted) {
+        throw new Error("Bài viết đã bị xóa");
+    }
+
     const isOwner = post.owner.toString() === userId;
 
     if (!isAdmin && !isOwner) {
         throw new Error("Bạn không có quyền chỉnh sửa bài viết này");
+    }
+
+    if (data.category) {
+        const activeCategory = await Category.findOne({
+            _id: data.category,
+            isDeleted: false,
+        });
+        if (!activeCategory) {
+            throw new Error("Danh mục không tồn tại hoặc đã bị xóa");
+        }
     }
 
     Object.assign(post, data);
@@ -130,6 +176,9 @@ export const updatePost = async (
 export const toggleAvailable = async (postId: string, userId: string, isAdmin: boolean, available: boolean, io?: any) => {
     const post = await Post.findById(postId);
     if (!post) throw new Error("Không tìm thấy bài viết");
+    if (post.isDeleted) {
+        throw new Error("Bài viết đã bị xóa");
+    }
 
     const isOwner = post.owner.toString() === userId;
 
@@ -160,7 +209,10 @@ export const toggleAvailable = async (postId: string, userId: string, isAdmin: b
 
 // Lấy chi tiết bài viết
 export const getPostDetail = async (id: string) => {
-    return await Post.findById(id)
+    return await Post.findOne({
+        _id: id, 
+        isDeleted: false,
+    })
         .populate("category", "name")
         .populate("owner", "name email");
 };
@@ -170,12 +222,15 @@ export const getMyPosts = async (userId: string, page = 1, limit = 10) => {
     const skip = (page - 1) * limit;
 
     const [posts, total] = await Promise.all([
-        Post.find({ owner: userId })
+        Post.find({ 
+          owner: userId,
+          isDeleted: false
+        })
             .populate("category", "name")
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(limit),
-        Post.countDocuments({ owner: userId })
+        Post.countDocuments({ owner: userId, isDeleted: false })
     ]);
 
     return {
@@ -192,7 +247,7 @@ export const getMyPosts = async (userId: string, page = 1, limit = 10) => {
 export const getMySoldPosts = async (userId: string, page = 1, limit = 10) => {
   const skip = (page - 1) * limit;
 
-  const filters: any = { owner: userId, available: false };
+  const filters: any = { owner: userId, available: false, isDeleted: false };
 
   const [posts, total] = await Promise.all([
     Post.find(filters)
@@ -220,7 +275,7 @@ export const getSoldPostsByUser = async (ownerId: string, page = 1, limit = 10) 
   }
 
   const skip = (page - 1) * limit;
-  const filters: any = { owner: ownerId, available: false, statusApproval: true };
+  const filters: any = { owner: ownerId, available: false, statusApproval: true, isDeleted: false };
 
   const [posts, total] = await Promise.all([
     Post.find(filters)
@@ -299,7 +354,7 @@ export const getApprovedPosts = async (page = 1, limit = 10, userId?: string) =>
 
     // Filter loại bỏ bài của chính user
     const ownerFilter = userId ? new mongoose.Types.ObjectId(userId) : null;
-    const filters: any = { statusApproval: true, available: true };
+    const filters: any = { statusApproval: true, available: true, isDeleted: false };
     if (ownerFilter) {
       filters.owner = { $ne: ownerFilter };
     }
@@ -335,6 +390,7 @@ export const getApprovedPostsByUser = async (userId: string, page = 1, limit = 1
     const filters = {
         owner: userId,
         statusApproval: true,
+        isDeleted: false,
     };
 
     const [posts, total] = await Promise.all([
@@ -386,7 +442,8 @@ export const searchPosts = async (query: SearchQuery) => {
     } = query;
 
     const filters: any = {
-        statusApproval: true, // chỉ lấy bài đã duyệt
+        statusApproval: true,// chỉ lấy bài đã duyệt
+        isDeleted: false,
     };
 
     // Nếu user đã đăng nhập: loại bài của chính họ khỏi kết quả public
@@ -479,6 +536,7 @@ export const getPriorityPosts = async (page = 1, limit = 10, userId?: string) =>
     priority_expiry: { $exists: true, $gt: now },
     available: true,
     statusApproval: true,
+    isDeleted: false,
   };
 
   // (optional) loại bài của chính user
@@ -508,7 +566,7 @@ export const getPriorityPosts = async (page = 1, limit = 10, userId?: string) =>
 
 export const getNewestPosts = async (page = 1, limit = 10, userId?: string) => {
   const skip = (page - 1) * limit;
-  const filter: any = { available: true, statusApproval: true };
+  const filter: any = { available: true, statusApproval: true, isDeleted: false };
 
   // Nếu user đã đăng nhập: loại bài của chính họ
   if (userId && mongoose.Types.ObjectId.isValid(userId)) {
@@ -558,6 +616,8 @@ export const getNearbyPosts = async (lat: number, lng: number, maxDistance = 500
           spherical: true,
           query: { 
             statusApproval: true,
+            available: true,
+            isDeleted: false,
             ...(ownerFilter ? { owner: { $ne: ownerFilter } } : {}),
           },
         },
@@ -623,6 +683,7 @@ export const getNearbyPosts = async (lat: number, lng: number, maxDistance = 500
     ]),
     Post.countDocuments({
       statusApproval: true,
+      isDeleted: false,
       location: { $exists: true, $ne: null },
       ...(ownerFilter ? { owner: { $ne: ownerFilter } } : {}),
     }),

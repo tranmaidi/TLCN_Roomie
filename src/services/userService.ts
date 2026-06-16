@@ -6,6 +6,7 @@ import { generateToken } from "../utils/generateToken";
 import { generateOtp } from "../utils/generateOtp";
 import { NotificationService } from "./notificationService";
 import SurveyTemplate from "../models/SurveyTemplate";
+import Post from "../models/Post";
 
 const OTP_EXPIRE_MINUTES = 5;
 
@@ -70,7 +71,7 @@ export async function verifyRegister(email: string, code: string) {
 
 // Đăng nhập (tạo JWT ngay trong hàm)
 export async function login(email: string, password: string) {
-  const user = await User.findOne({ email });
+  const user = await User.findOne({ email, isDeleted: false });
   if (!user) throw new Error("Email chưa đăng ký!");
 
   if (user.isLocked) throw new Error("Tài khoản đã bị khóa!");
@@ -99,7 +100,7 @@ export async function login(email: string, password: string) {
 
 // Quên mật khẩu - gửi OTP
 export async function forgotPassword(email: string) {
-  const user = await User.findOne({ email });
+  const user = await User.findOne({ email, isDeleted: false });
   if (!user) throw new Error("Email không tồn tại!");
 
   const otp = generateOtp();
@@ -126,7 +127,11 @@ export async function resetPassword(
   if (!record) throw new Error("Mã OTP không hợp lệ hoặc đã hết hạn!");
 
   const hashed = await bcrypt.hash(newPassword, 10);
-  await User.findOneAndUpdate({ email }, { password: hashed });
+  const updated = await User.findOneAndUpdate(
+    { email, isDeleted: false },
+    { password: hashed }
+  );
+  if (!updated) throw new Error("Không tìm thấy người dùng");
 
   await OtpToken.deleteMany({ email, purpose: "forgot" });
   return { message: "Đổi mật khẩu thành công!" };
@@ -134,17 +139,30 @@ export async function resetPassword(
 
 // lấy thông tin cá nhân
 export const getProfile = async (userId: string) => {
-  const user = await User.findById(userId).select("-password");
-  if (!user) throw new Error("Không tìm thấy người dùng");
+  const user = await User.findOne({
+    _id: userId,
+    isDeleted: false,
+  }).select("-password");
+
+  if (!user) {
+    throw new Error("Không tìm thấy người dùng");
+  }
+
   return user;
 };
 
 // lấy thông tin người dùng khác (public profile)
 export const getPublicProfile = async (targetUserId: string) => {
-  const user = await User.findById(targetUserId)
-    .select("name avatar introduce gender address phone createdAt lastActiveAt");
+  const user = await User.findOne({
+    _id: targetUserId,
+    isDeleted: false,
+  }).select(
+    "name avatar introduce gender address phone createdAt lastActiveAt"
+  );
 
-  if (!user) throw new Error("Không tìm thấy người dùng");
+  if (!user) {
+    throw new Error("Không tìm thấy người dùng");
+  }
 
   return user;
 };
@@ -154,7 +172,7 @@ export const updateProfile = async (
   userId: string,
   data: Partial<Pick<IUser, "name" | "phone" | "gender" | "address" | "introduce">>
 ) => {
-  const user = await User.findByIdAndUpdate(userId, data, {
+  const user = await User.findOneAndUpdate({ _id: userId, isDeleted: false }, data, {
     new: true,
     runValidators: true,
   }).select("-password");
@@ -164,8 +182,8 @@ export const updateProfile = async (
 
 // cập nhật avatar
 export const updateAvatar = async (userId: string, imageUrl: string) => {
-  const user = await User.findByIdAndUpdate(
-    userId,
+  const user = await User.findOneAndUpdate(
+    { _id: userId, isDeleted: false },
     { avatar: imageUrl },
     { new: true }
   ).select("-password");
@@ -177,14 +195,15 @@ export const updateAvatar = async (userId: string, imageUrl: string) => {
 // lấy danh sách người dùng (admin)
 export const getAllUsers = async (page = 1, limit = 10) => {
   const skip = (page - 1) * limit;
+  const filter: any = { isDeleted: false };
 
   const [users, total] = await Promise.all([
-    User.find()
+    User.find(filter)
       .select("-password")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit),
-    User.countDocuments()
+    User.countDocuments(filter)
   ]);
 
   return {
@@ -200,8 +219,21 @@ export const getAllUsers = async (page = 1, limit = 10) => {
 
 // xoá người dùng (admin)
 export const deleteUser = async (id: string) => {
-  const user = await User.findByIdAndDelete(id);
-  if (!user) throw new Error("Không tìm thấy người dùng");
+  const user = await User.findOne({ _id: id, isDeleted: false });
+  if (!user) {
+    const existed = await User.findById(id);
+    if (!existed) throw new Error("Không tìm thấy người dùng");
+    throw new Error("Người dùng đã bị xóa");
+  }
+
+  user.isDeleted = true;
+  await user.save();
+
+  await Post.updateMany(
+    { owner: user._id, isDeleted: false },
+    { $set: { isDeleted: true } }
+  );
+
   return { message: "Đã xóa người dùng thành công" };
 };
 
@@ -246,6 +278,13 @@ export async function adminUpdateUser(
 ) {
   const updateData: any = { ...data };
 
+  const current = await User.findOne({ _id: id, isDeleted: false });
+  if (!current) {
+    const existed = await User.findById(id);
+    if (!existed) throw new Error("Không tìm thấy người dùng");
+    throw new Error("Người dùng đã bị xóa");
+  }
+
   if (data.email) {
     // đảm bảo email không trùng với user khác
     const other = await User.findOne({ email: data.email, _id: { $ne: id } });
@@ -256,7 +295,11 @@ export async function adminUpdateUser(
     updateData.password = await bcrypt.hash(data.password, 10);
   }
 
-  const user = await User.findByIdAndUpdate(id, updateData, { new: true, runValidators: true }).select("-password");
+  const user = await User.findOneAndUpdate(
+    { _id: id, isDeleted: false },
+    updateData,
+    { new: true, runValidators: true }
+  ).select("-password");
   if (!user) throw new Error("Không tìm thấy người dùng");
   return user;
 }

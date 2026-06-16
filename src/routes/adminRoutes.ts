@@ -3,6 +3,7 @@ import { AdminController } from "../controllers/adminController";
 // dùng middleware đã có
 import { authMiddleware, requireAdmin } from "../middlewares/authMiddleware";
 import { SurveyTemplateController } from "../controllers/surveyTemplateController";
+import { getPostFee, updatePostFee } from "../controllers/postFeeController";
 
 const router = Router();
 
@@ -13,6 +14,8 @@ router.use(requireAdmin);
 router.get("/stats", AdminController.stats);
 router.get("/posts-by-category", AdminController.postsByCategory);
 router.get("/revenue/subscriptions", AdminController.revenueFromSubscriptions);
+router.get("/post-fee", getPostFee);
+router.put("/post-fee", updatePostFee);
 
 // Survey template management (admin)
 router.get("/surveys/templates", SurveyTemplateController.list);
