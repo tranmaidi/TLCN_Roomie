@@ -63,7 +63,7 @@ function fallbackRerank(candidates: any[], query?: string, interactions: any[] =
 
           // city preference
           if (qid.includes("city") || qid.includes("location")) {
-            if (city && city.includes(val)) score += 50;
+            if (city && city.includes(val)) score += 70;
             else if (title.includes(val) || desc.includes(val)) score += 20;
           }
 
@@ -99,10 +99,10 @@ function fallbackRerank(candidates: any[], query?: string, interactions: any[] =
     })
     .sort((a, b) => b.score - a.score);
 
-  // ai_score là điểm thực (raw score) được tính từ signals
+  // personalizedScore là điểm phù hợp của bài đăng(raw score) được tính từ signals
   for (const s of scored) {
     try {
-      s.post.ai_score = s.score;
+      s.post.personalizedScore = s.score;
     } catch {}
   }
 
@@ -188,7 +188,7 @@ function applyFavoriteSimilarityBoost(candidates: any[], profile: FavoriteProfil
     const district = (p?.district || "").toString().trim();
     const ward = (p?.ward || "").toString().trim();
 
-    if (city && topCitySet.has(city)) boost += 40;
+    if (city && topCitySet.has(city)) boost += 70;
     if (district && topDistrictSet.has(district)) boost += 55;
     if (ward && topWardSet.has(ward)) boost += 30;
 

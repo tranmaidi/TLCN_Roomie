@@ -507,18 +507,18 @@ export const searchPosts = async (query: SearchQuery) => {
 
 export function applyBusinessRanking(userId: string | undefined, posts: any[]) {
   // weights
-  const w_ai = 0.9, w_sub = 0.1;
-  // ai_score bây giờ là "điểm thực" => chuẩn hoá về [0,1] trước khi trộn với subscription score
-  const rawScores = (posts || []).map((p: any) => (typeof p?.ai_score === "number" ? p.ai_score : 0));
-  const maxAiScore = Math.max(1, ...rawScores);
+  const w_personalized = 0.9, w_sub = 0.1;
+  // personalizedScore bây giờ là "điểm thực" => chuẩn hoá về [0,1] trước khi trộn với subscription score
+  const rawScores = (posts || []).map((p: any) => (typeof p?.personalizedScore === "number" ? p.personalizedScore : 0));
+  const maxPersonalizedScore = Math.max(1, ...rawScores);
 
   const scored = posts.map((p) => {
-    const aiRaw = typeof p.ai_score === "number" ? p.ai_score : 0;
-    const normalizedAiScore = Math.max(0, aiRaw) / maxAiScore;
+    const rawPersonalizedScore = typeof p.personalizedScore === "number" ? p.personalizedScore : 0;
+    const normalizedPersonalizedScore = Math.max(0, rawPersonalizedScore) / maxPersonalizedScore;
   const expiryOk = p.priority_expiry ? new Date(p.priority_expiry) > new Date() : false;
   // priority_level mapping: 1 = Premium, 2 = Basic, 0 = normal
   const sub = expiryOk ? (p.priority_level === 1 ? 0.4 : (p.priority_level === 2 ? 0.2 : 0)) : 0;
-    const final = w_ai * normalizedAiScore + w_sub * sub;
+    const final = w_personalized * normalizedPersonalizedScore + w_sub * sub;
     return { post: p, final };
   });
 
