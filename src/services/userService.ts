@@ -7,6 +7,7 @@ import { generateOtp } from "../utils/generateOtp";
 import { NotificationService } from "./notificationService";
 import SurveyTemplate from "../models/SurveyTemplate";
 import Post from "../models/Post";
+import PaymentHistory from "../models/PaymentHistory";
 
 const OTP_EXPIRE_MINUTES = 5;
 
@@ -213,6 +214,21 @@ export const getAllUsers = async (page = 1, limit = 10) => {
       page,
       totalPages: Math.ceil(total / limit),
     },
+  };
+};
+
+// thống kê public cho trang giới thiệu
+export const getPublicStats = async () => {
+  const [totalPosts, totalUsers, totalSuccessfulPayments] = await Promise.all([
+    Post.countDocuments({ isDeleted: false }),
+    User.countDocuments({ isDeleted: false }),
+    PaymentHistory.countDocuments({ status: "success" }),
+  ]);
+
+  return {
+    totalPosts,
+    totalUsers,
+    totalSuccessfulPayments,
   };
 };
 

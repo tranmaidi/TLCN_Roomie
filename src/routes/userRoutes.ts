@@ -10,6 +10,7 @@ router.post("/verify-register", userController.verifyRegister);
 router.post("/login", userController.login);
 router.post("/forgot-password", userController.forgotPassword);
 router.post("/reset-password", userController.resetPassword);
+router.get("/stats", userController.getPublicStats);
 
 // ROUTE CHỈ DÀNH CHO ADMIN
 router.get("/users", authMiddleware, requireAdmin, userController.getAllUsers);

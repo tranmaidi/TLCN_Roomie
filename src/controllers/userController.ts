@@ -61,6 +61,17 @@ export const resetPassword = async (req: Request, res: Response) => {
   }
 };
 
+// Thống kê public cho trang giới thiệu
+export const getPublicStats = async (_req: Request, res: Response) => {
+  try {
+    const stats = await userService.getPublicStats();
+    return res.status(200).json(stats);
+  } catch (err) {
+    const error = err as Error;
+    return res.status(500).json({ error: error.message });
+  }
+};
+
 // Lấy thông tin cá nhân
 export const getProfile = async (req: Request, res: Response) => {
   try {
