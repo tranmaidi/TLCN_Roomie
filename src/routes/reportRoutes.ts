@@ -10,4 +10,7 @@ router.post("/", authMiddleware, ReportController.create);
 // Admin view reports
 router.get("/admin/all", authMiddleware, requireAdmin, ReportController.adminGetAll);
 
+// Admin mark report as processed
+router.patch("/admin/processed/:reportId", authMiddleware, requireAdmin, ReportController.adminMarkProcessed);
+
 export default router;

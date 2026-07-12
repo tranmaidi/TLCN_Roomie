@@ -3,6 +3,7 @@ import cron from "node-cron";
 import Subscription from "../models/Subscription";
 import Notification from "../models/Notification";
 import Post from "../models/Post";
+import Package from "../models/Package";
 
 // Runs every day at 01:00 AM server time
 export default function startSubscriptionCron() {
@@ -33,13 +34,43 @@ export default function startSubscriptionCron() {
       for (const s of expired) {
         s.status = "expired";
         await s.save();
-        // reset user's posts priority
-        await Post.updateMany({ owner: (s as any).user }, { $set: { priority_level: 0 }, $unset: { priority_expiry: "" } });
-        await Notification.create({
-          user: (s as any).user,
-          title: "Gói ưu tiên đã hết hạn",
-          body: `Gói ưu tiên của bạn đã hết hạn.`,
-        });
+
+        const userId = (s as any).user;
+        // reset user's posts priority first, then re-apply if there is a queued subscription
+        await Post.updateMany({ owner: userId }, { $set: { priority_level: 0 }, $unset: { priority_expiry: "" } });
+
+        const nextPending = await Subscription.findOne({
+          user: userId,
+          status: "pending",
+          startAt: { $lte: now },
+        })
+          .sort({ startAt: 1, createdAt: 1 });
+
+        if (nextPending) {
+          const nextPkg = await Package.findById(nextPending.package);
+          nextPending.status = "active";
+          nextPending.startAt = nextPending.startAt || now;
+          await nextPending.save();
+
+          if (nextPkg) {
+            await Post.updateMany(
+              { owner: userId },
+              { $set: { priority_level: nextPkg.priority_level, priority_expiry: nextPending.expiryAt } }
+            );
+          }
+
+          await Notification.create({
+            user: userId,
+            title: "Gói ưu tiên mới đã được kích hoạt",
+            body: `Gói ${nextPkg?.name || "ưu tiên"} của bạn đã tự động bắt đầu sau khi gói trước kết thúc.`,
+          });
+        } else {
+          await Notification.create({
+            user: userId,
+            title: "Gói ưu tiên đã hết hạn",
+            body: `Gói ưu tiên của bạn đã hết hạn.`,
+          });
+        }
       }
 
       console.log("[cron] subscription job finished");

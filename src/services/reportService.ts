@@ -35,9 +35,10 @@ export const ReportService = {
       const reporter = (populated as any)?.reporter;
       const payload = {
         type: "NEW_REPORT",
-  reportId: (report._id as mongoose.Types.ObjectId).toString(),
+        reportId: (report._id as mongoose.Types.ObjectId).toString(),
         postId: postId,
         reason,
+        status: report.status,
         reporter: reporter
           ? {
               _id: reporter._id,
@@ -80,6 +81,25 @@ export const ReportService = {
         totalPages: Math.ceil(total / limit),
       },
     };
+  },
+
+  async markAsProcessed(reportId: string) {
+    assertObjectId(reportId, "reportId");
+
+    const report = await Report.findById(reportId);
+    if (!report) throw new Error("Báo cáo không tồn tại");
+
+    const wasAlreadyProcessed = report.status === "Đã xử lý";
+    if (!wasAlreadyProcessed) {
+      report.status = "Đã xử lý";
+      await report.save();
+    }
+
+    const populated = await Report.findById(report._id)
+      .populate("post", "title price city district ward address owner images")
+      .populate("reporter", "name email avatar");
+
+    return { report: populated, wasAlreadyProcessed };
   },
 
   async getAdminIds() {

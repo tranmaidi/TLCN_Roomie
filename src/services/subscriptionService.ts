@@ -15,42 +15,73 @@ export async function activateSubscription(userId: string, packageId: string, tr
     const pkg = await Package.findById(packageId).session(session);
     if (!pkg) throw new Error("Package not found");
 
-    // If user already has an active subscription, extend it instead of creating a new one.
     const now = new Date();
-    const existingActive = await Subscription.findOne({ user: userId, status: "active", expiryAt: { $gt: now } }).session(session);
+    const latestFutureSubscription = await Subscription.findOne({
+      user: userId,
+      status: { $in: ["active", "pending"] },
+      expiryAt: { $gt: now },
+    })
+      .sort({ expiryAt: -1, createdAt: -1 })
+      .session(session);
 
-    // compute expiry based on current active expiry (if any) + pkg.days
-    const baseTime = existingActive?.expiryAt && existingActive.expiryAt > now ? existingActive.expiryAt : now;
+    const baseTime = latestFutureSubscription?.expiryAt && latestFutureSubscription.expiryAt > now
+      ? latestFutureSubscription.expiryAt
+      : now;
     const expiry = new Date(baseTime.getTime() + pkg.days * 24 * 60 * 60 * 1000);
 
     let subDoc: any;
-    if (existingActive) {
-      existingActive.package = pkg._id as any;
-      existingActive.startAt = existingActive.startAt || now;
-      existingActive.expiryAt = expiry;
-      existingActive.status = "active";
-      subDoc = await existingActive.save({ session });
-    } else {
-      const created = await Subscription.create([
-        {
-          user: userId,
-          package: pkg._id,
-          status: "active",
-          startAt: now,
-          expiryAt: expiry,
-        },
-      ], { session });
-      subDoc = created[0];
-    }
+    let isQueued = false;
 
-    // update all posts of the user
-    await Post.updateMany({ owner: userId }, { $set: { priority_level: pkg.priority_level, priority_expiry: expiry } }).session(session);
+    if (latestFutureSubscription) {
+      const created = await Subscription.create(
+        [
+          {
+            user: userId,
+            package: pkg._id,
+            status: "pending",
+            startAt: baseTime,
+            expiryAt: expiry,
+          },
+        ],
+        { session }
+      );
+      subDoc = created[0];
+      isQueued = true;
+    } else {
+      const created = await Subscription.create(
+        [
+          {
+            user: userId,
+            package: pkg._id,
+            status: "active",
+            startAt: now,
+            expiryAt: expiry,
+          },
+        ],
+        { session }
+      );
+      subDoc = created[0];
+
+      // update all posts of the user only when the package starts immediately
+      await Post.updateMany({ owner: userId }, { $set: { priority_level: pkg.priority_level, priority_expiry: expiry } }).session(session);
+    }
 
     // update transaction
     await Transaction.findByIdAndUpdate(transactionId, { status: "paid" }).session(session);
 
     // create notification
-    await Notification.create([{ user: userId, title: "Đăng ký gói thành công", content: `Gói ${pkg.name} đã được kích hoạt. Hết hạn: ${expiry.toISOString()}` }], { session });
+    await Notification.create(
+      [
+        {
+          user: userId,
+          title: isQueued ? "Đăng ký gói thành công" : "Đăng ký gói thành công",
+          content: isQueued
+            ? `Gói ${pkg.name} đã được ghi nhận và sẽ tự động kích hoạt khi gói hiện tại hết hạn. Thời gian kết thúc dự kiến: ${expiry.toISOString()}`
+            : `Gói ${pkg.name} đã được kích hoạt. Hết hạn: ${expiry.toISOString()}`,
+        },
+      ],
+      { session }
+    );
 
     await session.commitTransaction();
     session.endSession();
