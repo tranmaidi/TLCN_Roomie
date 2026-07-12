@@ -62,15 +62,16 @@ export const ReportService = {
 
   async getAllAdminReports(page = 1, limit = 20) {
     const skip = (page - 1) * limit;
+    const filter = { status: { $ne: "Đã xử lý" } };
 
     const [rows, total] = await Promise.all([
-      Report.find()
+      Report.find(filter)
         .populate("post", "title price city district ward address owner images")
         .populate("reporter", "name email avatar")
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit),
-      Report.countDocuments(),
+      Report.countDocuments(filter),
     ]);
 
     return {
