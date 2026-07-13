@@ -128,9 +128,9 @@ export class MessageService {
     ) {
       message.status = "READ";
       await message.save();
-      console.log(`✅ Message ${messageId} marked as READ by ${userId}`);
+      console.log(`Message ${messageId} marked as READ by ${userId}`);
     } else {
-      console.log(`ℹ️ messageSeen ignored (sender or already read)`);
+      console.log(`messageSeen ignored (sender or already read)`);
     }
 
     return await message.populate([
